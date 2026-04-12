@@ -57,6 +57,10 @@ class HealthHabit:
     meditation_minutes: int = 0
     alcohol_drinks: int = 0
     smoking: bool = False
+    active_energy_burned: float = 0.0  # Active calories from Apple Health/Fitness
+    resting_energy_burned: float = 0.0  # Resting calories from Apple Health/Fitness
+    flights_climbed: int = 0
+    distance_walked_km: float = 0.0
     notes: str = ""
 
 
@@ -70,6 +74,10 @@ class Workout:
     sets: Optional[int] = None
     reps: Optional[int] = None
     weight_lifted_kg: Optional[float] = None
+    calories_reported: Optional[float] = None  # Calories reported by source device
+    avg_heart_rate: Optional[int] = None
+    source: str = "manual"  # "manual", "apple_health", "strava"
+    external_id: Optional[str] = None  # For deduplication across syncs
     notes: str = ""
 
 
@@ -79,6 +87,8 @@ class HeartRateEntry:
     time: str
     heart_rate_bpm: int
     context: str = "resting"  # "resting", "during_workout", "post_workout", "morning", "evening"
+    source: str = "manual"  # "manual", "apple_health", "strava"
+    external_id: Optional[str] = None
 
 
 @dataclass

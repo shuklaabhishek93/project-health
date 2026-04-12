@@ -18,6 +18,16 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
     lines.append(f"  {profile.name} | Age: {profile.age} | BMI: {profile.bmi}")
     lines.append("=" * 60)
 
+    # Data sources
+    sources = set()
+    for w in record.workouts:
+        sources.add(w.source)
+    for hr in record.heart_rate_readings:
+        sources.add(hr.source)
+    if not sources:
+        sources.add("manual")
+    lines.append(f"  Data Sources: {', '.join(sorted(sources))}")
+
     # BMR info
     bmr = calculate_bmr(profile)
     lines.append(f"\n  Basal Metabolic Rate (BMR): {bmr} cal/day")
@@ -42,6 +52,11 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
         step_calories = calculate_steps_calories(profile, habits.steps)
         lines.append(f"  Calories (steps): {step_calories} cal")
 
+        if habits.distance_walked_km > 0:
+            lines.append(f"  Walk/Run Dist:    {habits.distance_walked_km} km")
+        if habits.flights_climbed > 0:
+            lines.append(f"  Flights Climbed:  {habits.flights_climbed}")
+
         lines.append(f"  Fruits/Veggies:   {habits.fruits_vegetables_servings} servings (target: 5+)")
         lines.append(f"  Meditation:       {habits.meditation_minutes} minutes")
 
@@ -49,6 +64,14 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
             lines.append(f"  Alcohol:          {habits.alcohol_drinks} drinks (limit: 1-2/day)")
         if habits.smoking:
             lines.append("  Smoking:          Yes (strongly consider quitting)")
+
+        # Show device-reported energy if available
+        if habits.active_energy_burned > 0 or habits.resting_energy_burned > 0:
+            lines.append(f"\n  Device-Reported Energy (Apple Health/Fitness):")
+            if habits.active_energy_burned > 0:
+                lines.append(f"    Active Energy:  {habits.active_energy_burned} cal")
+            if habits.resting_energy_burned > 0:
+                lines.append(f"    Resting Energy: {habits.resting_energy_burned} cal")
 
         if habits.notes:
             lines.append(f"  Notes:            {habits.notes}")
@@ -65,11 +88,16 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
 
     if record.workouts:
         for i, workout in enumerate(record.workouts, 1):
-            calories = calculate_calories_burned(profile, workout)
+            # Use device-reported calories if available, otherwise calculate
+            if workout.calories_reported and workout.calories_reported > 0:
+                calories = workout.calories_reported
+            else:
+                calories = calculate_calories_burned(profile, workout)
             total_workout_calories += calories
             total_workout_minutes += workout.duration_minutes
 
-            lines.append(f"\n  Workout #{i}: {workout.workout_type.title()}")
+            source_tag = f" [{workout.source}]" if workout.source != "manual" else ""
+            lines.append(f"\n  Workout #{i}: {workout.workout_type.replace('_', ' ').title()}{source_tag}")
             lines.append(f"    Duration:    {workout.duration_minutes} min")
             lines.append(f"    Intensity:   {workout.intensity.title()}")
             if workout.distance_km:
@@ -78,7 +106,12 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
                 lines.append(f"    Sets/Reps:   {workout.sets} x {workout.reps}")
             if workout.weight_lifted_kg:
                 lines.append(f"    Weight:      {workout.weight_lifted_kg} kg")
-            lines.append(f"    Calories:    {calories} cal")
+            if workout.avg_heart_rate:
+                lines.append(f"    Avg HR:      {workout.avg_heart_rate} bpm")
+            lines.append(f"    Calories:    {calories} cal"
+                         f"{' (device)' if workout.calories_reported else ' (estimated)'}")
+            if workout.notes:
+                lines.append(f"    Note:        {workout.notes}")
 
         lines.append(f"\n  Total Workout Time:     {total_workout_minutes} min")
         lines.append(f"  Total Workout Calories: {total_workout_calories} cal")
@@ -100,13 +133,19 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
         lines.append(f"  Lowest:         {min(hr_values)} bpm")
         lines.append(f"  Highest:        {max(hr_values)} bpm")
 
+        # Show source breakdown
+        hr_sources = set(r.source for r in record.heart_rate_readings)
+        if len(hr_sources) > 1 or "manual" not in hr_sources:
+            lines.append(f"  Sources:        {', '.join(sorted(hr_sources))}")
+
         # Analyze each reading
         lines.append("\n  Detailed Readings:")
         for reading in record.heart_rate_readings:
             analysis = analyze_heart_rate(profile, reading)
+            src = f" [{reading.source}]" if reading.source != "manual" else ""
             lines.append(f"    {reading.time} ({reading.context}): {reading.heart_rate_bpm} bpm "
                          f"[{analysis['zone'].replace('_', ' ').title()}] "
-                         f"({analysis['percentage_of_max']}% of max)")
+                         f"({analysis['percentage_of_max']}% of max){src}")
             if analysis["recommendation"]:
                 lines.append(f"      -> {analysis['recommendation']}")
     else:

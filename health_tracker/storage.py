@@ -74,6 +74,10 @@ def save_daily_record(record: DailyRecord):
             "meditation_minutes": record.health_habits.meditation_minutes,
             "alcohol_drinks": record.health_habits.alcohol_drinks,
             "smoking": record.health_habits.smoking,
+            "active_energy_burned": record.health_habits.active_energy_burned,
+            "resting_energy_burned": record.health_habits.resting_energy_burned,
+            "flights_climbed": record.health_habits.flights_climbed,
+            "distance_walked_km": record.health_habits.distance_walked_km,
             "notes": record.health_habits.notes,
         }
 
@@ -87,6 +91,10 @@ def save_daily_record(record: DailyRecord):
             "sets": workout.sets,
             "reps": workout.reps,
             "weight_lifted_kg": workout.weight_lifted_kg,
+            "calories_reported": workout.calories_reported,
+            "avg_heart_rate": workout.avg_heart_rate,
+            "source": workout.source,
+            "external_id": workout.external_id,
             "notes": workout.notes,
         })
 
@@ -96,6 +104,8 @@ def save_daily_record(record: DailyRecord):
             "time": hr.time,
             "heart_rate_bpm": hr.heart_rate_bpm,
             "context": hr.context,
+            "source": hr.source,
+            "external_id": hr.external_id,
         })
 
     with open(filepath, "w") as f:
@@ -115,13 +125,49 @@ def load_daily_record(record_date: str) -> Optional[DailyRecord]:
     record.total_calories_burned = data.get("total_calories_burned", 0.0)
 
     if data.get("health_habits"):
-        record.health_habits = HealthHabit(**data["health_habits"])
+        h = data["health_habits"]
+        record.health_habits = HealthHabit(
+            date=h["date"],
+            water_intake_liters=h.get("water_intake_liters", 0.0),
+            sleep_hours=h.get("sleep_hours", 0.0),
+            steps=h.get("steps", 0),
+            fruits_vegetables_servings=h.get("fruits_vegetables_servings", 0),
+            meditation_minutes=h.get("meditation_minutes", 0),
+            alcohol_drinks=h.get("alcohol_drinks", 0),
+            smoking=h.get("smoking", False),
+            active_energy_burned=h.get("active_energy_burned", 0.0),
+            resting_energy_burned=h.get("resting_energy_burned", 0.0),
+            flights_climbed=h.get("flights_climbed", 0),
+            distance_walked_km=h.get("distance_walked_km", 0.0),
+            notes=h.get("notes", ""),
+        )
 
     for w in data.get("workouts", []):
-        record.workouts.append(Workout(**w))
+        record.workouts.append(Workout(
+            date=w["date"],
+            workout_type=w["workout_type"],
+            duration_minutes=w.get("duration_minutes", 0),
+            intensity=w.get("intensity", "moderate"),
+            distance_km=w.get("distance_km"),
+            sets=w.get("sets"),
+            reps=w.get("reps"),
+            weight_lifted_kg=w.get("weight_lifted_kg"),
+            calories_reported=w.get("calories_reported"),
+            avg_heart_rate=w.get("avg_heart_rate"),
+            source=w.get("source", "manual"),
+            external_id=w.get("external_id"),
+            notes=w.get("notes", ""),
+        ))
 
     for hr in data.get("heart_rate_readings", []):
-        record.heart_rate_readings.append(HeartRateEntry(**hr))
+        record.heart_rate_readings.append(HeartRateEntry(
+            date=hr["date"],
+            time=hr["time"],
+            heart_rate_bpm=hr["heart_rate_bpm"],
+            context=hr.get("context", "resting"),
+            source=hr.get("source", "manual"),
+            external_id=hr.get("external_id"),
+        ))
 
     return record
 

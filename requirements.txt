@@ -1,2 +1,6 @@
-# No external dependencies required - uses Python standard library only
 # Python 3.10+ required for type hints (tuple[int, int], dict[str, ...])
+
+# Required for Strava API integration
+requests>=2.28.0
+
+# Apple Health import and manual tracking use only the standard library

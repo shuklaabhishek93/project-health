@@ -1,7 +1,8 @@
 """Health and Workout Tracker - CLI Application."""
 
+import os
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 from health_tracker.models import (
     UserProfile,
@@ -19,6 +20,7 @@ from health_tracker.storage import (
     list_all_records,
 )
 from health_tracker.summary import generate_daily_summary
+from health_tracker.integrations.sync import sync_imported_records
 
 
 def get_input(prompt: str, type_fn=str, default=None):
@@ -143,6 +145,169 @@ def view_summary(profile: UserProfile, record_date: str):
     save_daily_record(record)  # Save updated calorie totals
 
 
+def import_apple_health_data():
+    """Import data from Apple Health XML export."""
+    from health_tracker.integrations.apple_health import import_apple_health
+
+    print("\n" + "=" * 50)
+    print("  IMPORT FROM APPLE HEALTH")
+    print("=" * 50)
+    print("\n  How to export your Apple Health data:")
+    print("    1. Open 'Health' app on iPhone")
+    print("    2. Tap your profile picture (top right)")
+    print("    3. Tap 'Export All Health Data'")
+    print("    4. Unzip the file to get export.xml")
+    print()
+
+    xml_path = get_input("Path to export.xml", str)
+
+    if not os.path.exists(xml_path):
+        print(f"\n  ERROR: File not found: {xml_path}")
+        return
+
+    print("\n  Date range options:")
+    print("    1. Import all data")
+    print("    2. Import specific date")
+    print("    3. Import date range")
+    range_choice = get_input("Choose (1-3)", str, "1")
+
+    date_filter = None
+    start_date = None
+    end_date = None
+
+    if range_choice == "2":
+        date_filter = get_input("Date (YYYY-MM-DD)", str)
+    elif range_choice == "3":
+        start_date = get_input("Start date (YYYY-MM-DD)", str)
+        end_date = get_input("End date (YYYY-MM-DD)", str)
+
+    imported = import_apple_health(
+        xml_path,
+        date_filter=date_filter,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    if imported:
+        print("\n  Syncing imported data with local records...")
+        updated, created = sync_imported_records(imported)
+        print(f"  Done! Days updated: {updated}, Days created: {created}")
+    else:
+        print("\n  No data found for the selected date range.")
+
+
+def import_strava_data():
+    """Import data from Strava."""
+    from health_tracker.integrations.strava import (
+        authorize_strava,
+        load_strava_token,
+        import_strava,
+    )
+
+    print("\n" + "=" * 50)
+    print("  IMPORT FROM STRAVA")
+    print("=" * 50)
+
+    # Check for existing token
+    token_data = load_strava_token()
+
+    if not token_data:
+        print("\n  No Strava connection found. Let's set it up.")
+        print("\n  You need a Strava API application:")
+        print("    1. Go to https://www.strava.com/settings/api")
+        print("    2. Create an application")
+        print("    3. Set 'Authorization Callback Domain' to 'localhost'")
+        print()
+
+        client_id = get_input("Strava Client ID", str)
+        client_secret = get_input("Strava Client Secret", str)
+
+        token_data = authorize_strava(client_id, client_secret)
+        if not token_data:
+            print("\n  Authorization failed. Please try again.")
+            return
+
+    access_token = token_data["access_token"]
+
+    print("\n  Date range options:")
+    print("    1. Last 7 days")
+    print("    2. Last 30 days")
+    print("    3. Specific date")
+    print("    4. Custom date range")
+    print("    5. All activities")
+    range_choice = get_input("Choose (1-5)", str, "1")
+
+    today = date.today()
+    date_filter = None
+    start_date = None
+    end_date = None
+
+    if range_choice == "1":
+        start_date = (today - timedelta(days=7)).isoformat()
+    elif range_choice == "2":
+        start_date = (today - timedelta(days=30)).isoformat()
+    elif range_choice == "3":
+        date_filter = get_input("Date (YYYY-MM-DD)", str)
+    elif range_choice == "4":
+        start_date = get_input("Start date (YYYY-MM-DD)", str)
+        end_date = get_input("End date (YYYY-MM-DD)", str)
+    # Option 5: no filters, import all
+
+    fetch_hr = get_input("Fetch detailed heart rate data? (yes/no)", str, "yes").lower() in ("yes", "y")
+
+    imported = import_strava(
+        access_token,
+        date_filter=date_filter,
+        start_date=start_date,
+        end_date=end_date,
+        fetch_heart_rates=fetch_hr,
+    )
+
+    if imported:
+        print("\n  Syncing imported data with local records...")
+        updated, created = sync_imported_records(imported)
+        print(f"  Done! Days updated: {updated}, Days created: {created}")
+    else:
+        print("\n  No activities found for the selected date range.")
+
+
+def show_data_sources():
+    """Show connected data sources and their status."""
+    from health_tracker.integrations.strava import load_strava_token
+
+    print("\n" + "=" * 50)
+    print("  DATA SOURCES")
+    print("=" * 50)
+
+    print("\n  1. Manual Entry          [Always available]")
+
+    # Apple Health status
+    print("  2. Apple Health (iPhone)  [Import via XML export]")
+    print("     Export from: iPhone > Health > Profile > Export All Health Data")
+
+    # Strava status
+    token = load_strava_token()
+    if token:
+        print("  3. Strava                 [Connected]")
+    else:
+        print("  3. Strava                 [Not connected]")
+        print("     Setup at: https://www.strava.com/settings/api")
+
+    # Show source breakdown for recent records
+    records = list_all_records()
+    if records:
+        recent = records[-1]
+        record = load_daily_record(recent)
+        if record:
+            sources = set()
+            for w in record.workouts:
+                sources.add(w.source)
+            for hr in record.heart_rate_readings:
+                sources.add(hr.source)
+            if sources:
+                print(f"\n  Latest record ({recent}) sources: {', '.join(sorted(sources))}")
+
+
 def main_menu():
     """Display and handle main menu."""
     print("\n" + "=" * 50)
@@ -159,19 +324,26 @@ def main_menu():
 
     while True:
         print(f"\n  Today: {today} | User: {profile.name} (Age {profile.age})")
-        print("-" * 50)
-        print("  1. Log Health Habits")
-        print("  2. Log Workout")
-        print("  3. Log Heart Rate")
-        print("  4. View Today's Summary")
-        print("  5. View Summary for Another Date")
-        print("  6. View Age-Based Recommendations")
-        print("  7. View History")
-        print("  8. Update Profile")
-        print("  9. Exit")
-        print("-" * 50)
+        print("-" * 55)
+        print("  MANUAL LOGGING")
+        print("    1. Log Health Habits")
+        print("    2. Log Workout")
+        print("    3. Log Heart Rate")
+        print("  IMPORT DATA")
+        print("    4. Import from Apple Health (iPhone)")
+        print("    5. Import from Strava")
+        print("  VIEW & REPORTS")
+        print("    6. View Today's Summary")
+        print("    7. View Summary for Another Date")
+        print("    8. View Age-Based Recommendations")
+        print("    9. View History")
+        print("  SETTINGS")
+        print("   10. Data Sources & Connections")
+        print("   11. Update Profile")
+        print("    0. Exit")
+        print("-" * 55)
 
-        choice = get_input("Choose option (1-9)", str)
+        choice = get_input("Choose option", str)
 
         if choice == "1":
             # Load existing record or create new
@@ -195,13 +367,19 @@ def main_menu():
             print("\n  Heart rate logged!")
 
         elif choice == "4":
-            view_summary(profile, today)
+            import_apple_health_data()
 
         elif choice == "5":
+            import_strava_data()
+
+        elif choice == "6":
+            view_summary(profile, today)
+
+        elif choice == "7":
             record_date = get_input("Enter date (YYYY-MM-DD)", str)
             view_summary(profile, record_date)
 
-        elif choice == "6":
+        elif choice == "8":
             recommendations = get_age_based_recommendations(profile)
             print(f"\n  Recommendations for Age {profile.age}:")
             print(f"  Weekly Exercise: {recommendations['exercise_minutes_per_week']} min")
@@ -213,26 +391,35 @@ def main_menu():
                 print(f"    - {area}")
             print(f"  Note: {recommendations['caution']}")
 
-        elif choice == "7":
+        elif choice == "9":
             records = list_all_records()
             if records:
                 print(f"\n  Records available ({len(records)} days):")
                 for r in records[-10:]:  # Show last 10
-                    print(f"    - {r}")
+                    record = load_daily_record(r)
+                    sources = set()
+                    if record:
+                        for w in record.workouts:
+                            sources.add(w.source)
+                    source_tag = f" [{', '.join(sorted(sources))}]" if sources else ""
+                    print(f"    - {r}{source_tag}")
                 if len(records) > 10:
                     print(f"    ... and {len(records) - 10} more")
             else:
                 print("\n  No records found yet. Start logging!")
 
-        elif choice == "8":
+        elif choice == "10":
+            show_data_sources()
+
+        elif choice == "11":
             profile = setup_profile()
 
-        elif choice == "9":
+        elif choice == "0":
             print("\n  Stay healthy! Goodbye!")
             sys.exit(0)
 
         else:
-            print("\n  Invalid option. Please choose 1-9.")
+            print("\n  Invalid option.")
 
 
 if __name__ == "__main__":
