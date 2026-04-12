@@ -293,6 +293,16 @@ def show_data_sources():
         print("  3. Strava                 [Not connected]")
         print("     Setup at: https://www.strava.com/settings/api")
 
+    # Auto-sync status
+    from health_tracker.auto_sync import is_daemon_running, load_config
+    config = load_config()
+    if is_daemon_running():
+        print("  4. Auto-Sync Daemon       [Running]")
+    elif config.get("enabled"):
+        print("  4. Auto-Sync Daemon       [Configured but stopped]")
+    else:
+        print("  4. Auto-Sync Daemon       [Not configured]")
+
     # Show source breakdown for recent records
     records = list_all_records()
     if records:
@@ -306,6 +316,188 @@ def show_data_sources():
                 sources.add(hr.source)
             if sources:
                 print(f"\n  Latest record ({recent}) sources: {', '.join(sorted(sources))}")
+
+
+def manage_auto_sync():
+    """Auto-sync daemon management menu."""
+    from health_tracker.auto_sync import (
+        AutoSyncDaemon, load_config, save_config,
+        is_daemon_running, get_daemon_pid, stop_daemon,
+        LOG_PATH,
+    )
+    from health_tracker.integrations.shortcut_generator import (
+        generate_shortcut_instructions,
+        generate_test_curl_command,
+        save_instructions_to_file,
+        get_local_ip,
+    )
+
+    config = load_config()
+
+    while True:
+        running = is_daemon_running()
+        pid = get_daemon_pid()
+
+        print("\n" + "=" * 55)
+        print("  AUTO-SYNC MANAGEMENT")
+        print("=" * 55)
+
+        status = "RUNNING" if running else "STOPPED"
+        print(f"\n  Daemon Status: {status}" + (f" (PID {pid})" if pid else ""))
+
+        # Component status
+        srv = config["apple_health_server"]
+        fw = config["folder_watcher"]
+        st = config["strava"]
+        local_ip = get_local_ip()
+
+        print(f"\n  Components:")
+        print(f"    Apple Health Server: {'ON' if srv['enabled'] else 'OFF'}"
+              f"  (http://{local_ip}:{srv['port']}/sync)")
+        print(f"    Folder Watcher:     {'ON' if fw['enabled'] else 'OFF'}"
+              f"  ({fw['watch_dir'] or 'not configured'})")
+        print(f"    Strava Scheduler:   {'ON' if st['enabled'] else 'OFF'}"
+              f"  (daily at {st['sync_hour']:02d}:{st['sync_minute']:02d})")
+        if config.get("last_strava_sync"):
+            print(f"    Last Strava sync:   {config['last_strava_sync']}")
+
+        print(f"\n  Actions:")
+        if running:
+            print("    1. Stop Auto-Sync Daemon")
+        else:
+            print("    1. Start Auto-Sync Daemon")
+        print("    2. Configure Apple Health Server")
+        print("    3. Configure Folder Watcher")
+        print("    4. Configure Strava Scheduler")
+        print("    5. View iOS Shortcut Setup Guide")
+        print("    6. Test Server with curl command")
+        print("    7. View Sync Log")
+        print("    8. Run Strava Sync Now")
+        print("    0. Back to Main Menu")
+        print("-" * 55)
+
+        choice = get_input("Choose option", str)
+
+        if choice == "1":
+            if running:
+                stop_daemon()
+                print("\n  Auto-Sync Daemon stopped.")
+            else:
+                config["enabled"] = True
+                save_config(config)
+                print("\n  Starting Auto-Sync Daemon in background...")
+                daemon = AutoSyncDaemon(config)
+                import threading
+                t = threading.Thread(target=daemon.run_forever, daemon=True)
+                t.start()
+                import time
+                time.sleep(1)
+                if is_daemon_running():
+                    print("  Daemon started successfully!")
+                    print(f"  Apple Health endpoint: http://{local_ip}:{srv['port']}/sync")
+                else:
+                    print("  Daemon is initializing...")
+
+        elif choice == "2":
+            print("\n  Apple Health HTTP Server Configuration")
+            srv["enabled"] = get_input(
+                "Enable server? (yes/no)", str,
+                "yes" if srv["enabled"] else "no"
+            ).lower() in ("yes", "y")
+            if srv["enabled"]:
+                srv["port"] = get_input("Port", int, srv["port"])
+            save_config(config)
+            print("  Configuration saved!")
+            if running:
+                print("  Restart the daemon to apply changes.")
+
+        elif choice == "3":
+            print("\n  Folder Watcher Configuration")
+            print("  This watches a directory for Apple Health XML exports")
+            print("  (e.g., a folder synced via iCloud Drive)")
+            fw["enabled"] = get_input(
+                "Enable folder watcher? (yes/no)", str,
+                "yes" if fw["enabled"] else "no"
+            ).lower() in ("yes", "y")
+            if fw["enabled"]:
+                fw["watch_dir"] = get_input("Watch directory path", str, fw.get("watch_dir", ""))
+                fw["poll_interval_seconds"] = get_input("Poll interval (seconds)", int, 60)
+            save_config(config)
+            print("  Configuration saved!")
+            if running:
+                print("  Restart the daemon to apply changes.")
+
+        elif choice == "4":
+            print("\n  Strava Scheduler Configuration")
+            st["enabled"] = get_input(
+                "Enable daily Strava sync? (yes/no)", str,
+                "yes" if st["enabled"] else "no"
+            ).lower() in ("yes", "y")
+            if st["enabled"]:
+                st["sync_hour"] = get_input("Sync hour (0-23)", int, st["sync_hour"])
+                st["sync_minute"] = get_input("Sync minute (0-59)", int, st["sync_minute"])
+                st["fetch_heart_rates"] = get_input(
+                    "Fetch detailed HR data? (yes/no)", str,
+                    "yes" if st["fetch_heart_rates"] else "no"
+                ).lower() in ("yes", "y")
+            save_config(config)
+            print("  Configuration saved!")
+            if running:
+                print("  Restart the daemon to apply changes.")
+
+        elif choice == "5":
+            port = config["apple_health_server"]["port"]
+            instructions = generate_shortcut_instructions(port)
+            print(instructions)
+            filepath = save_instructions_to_file(port)
+            print(f"  Instructions also saved to: {filepath}")
+
+        elif choice == "6":
+            port = config["apple_health_server"]["port"]
+            curl_cmd = generate_test_curl_command(port)
+            print("\n  Test the sync endpoint with this curl command:\n")
+            print(f"  {curl_cmd}")
+
+        elif choice == "7":
+            print(f"\n  Sync Log ({LOG_PATH}):")
+            print("-" * 55)
+            if os.path.exists(LOG_PATH):
+                with open(LOG_PATH, "r") as f:
+                    lines = f.readlines()
+                # Show last 30 lines
+                for line in lines[-30:]:
+                    print(f"  {line.rstrip()}")
+                if len(lines) > 30:
+                    print(f"\n  ... showing last 30 of {len(lines)} lines")
+            else:
+                print("  No log file yet. Start the daemon first.")
+
+        elif choice == "8":
+            from health_tracker.integrations.strava import load_strava_token, import_strava
+            token_data = load_strava_token()
+            if not token_data:
+                print("\n  Strava not connected. Use option 5 in main menu first.")
+            else:
+                print("\n  Running Strava sync...")
+                start = (date.today() - timedelta(days=2)).isoformat()
+                imported = import_strava(
+                    token_data["access_token"],
+                    start_date=start,
+                    fetch_heart_rates=st.get("fetch_heart_rates", True),
+                )
+                if imported:
+                    updated, created = sync_imported_records(imported)
+                    print(f"  Done! {updated} days updated, {created} days created")
+                    config["last_strava_sync"] = date.today().isoformat()
+                    save_config(config)
+                else:
+                    print("  No new activities found.")
+
+        elif choice == "0":
+            break
+
+        else:
+            print("\n  Invalid option.")
 
 
 def main_menu():
@@ -337,9 +529,10 @@ def main_menu():
         print("    7. View Summary for Another Date")
         print("    8. View Age-Based Recommendations")
         print("    9. View History")
-        print("  SETTINGS")
+        print("  AUTO-SYNC & SETTINGS")
         print("   10. Data Sources & Connections")
         print("   11. Update Profile")
+        print("   12. Auto-Sync (Daily Automatic Import)")
         print("    0. Exit")
         print("-" * 55)
 
@@ -413,6 +606,9 @@ def main_menu():
 
         elif choice == "11":
             profile = setup_profile()
+
+        elif choice == "12":
+            manage_auto_sync()
 
         elif choice == "0":
             print("\n  Stay healthy! Goodbye!")
