@@ -25,8 +25,17 @@ To monitor and analyze daily health and fitness routine
 
 ## How to Run
 
+### Web UI (Recommended)
 ```bash
 pip install -r requirements.txt
+python web_app.py
+```
+Open http://localhost:5000 in your browser. The web UI has two tabs:
+- **Setup** - Configure profile, start/stop the auto-sync daemon, view iOS Shortcut guide, manage Strava connection
+- **Results & Analytics** - Interactive charts for health score, calories, heart rate, steps, sleep, water intake, and workout breakdown
+
+### CLI
+```bash
 python main.py
 ```
 
@@ -36,7 +45,13 @@ Requires Python 3.10+.
 
 ```
 project-health/
+├── web_app.py                           # Flask web UI entry point
 ├── main.py                              # CLI entry point
+├── templates/
+│   └── index.html                       # Single-page web UI (Setup + Results tabs)
+├── static/
+│   ├── css/style.css                    # Custom styles
+│   └── js/app.js                        # Chart.js charts & API interactions
 ├── health_tracker/
 │   ├── __init__.py
 │   ├── __main__.py                      # python -m health_tracker (runs daemon)

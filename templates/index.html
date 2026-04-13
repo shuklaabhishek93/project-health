@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Health & Workout Tracker</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/static/css/style.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg border-bottom">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="#">
+      <i class="bi bi-heart-pulse-fill text-danger me-2"></i>Health Tracker
+    </a>
+    <span class="navbar-text small" id="profileBadge"></span>
+  </div>
+</nav>
+
+<!-- Tab Navigation -->
+<div class="container-fluid mt-3">
+  <ul class="nav nav-tabs nav-justified" id="mainTabs" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" id="setup-tab" data-bs-toggle="tab"
+              data-bs-target="#setupPane" type="button" role="tab">
+        <i class="bi bi-gear-fill me-1"></i> Setup
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" id="results-tab" data-bs-toggle="tab"
+              data-bs-target="#resultsPane" type="button" role="tab">
+        <i class="bi bi-graph-up me-1"></i> Results & Analytics
+      </button>
+    </li>
+  </ul>
+</div>
+
+<!-- Tab Content -->
+<div class="tab-content container-fluid px-3 py-3">
+
+  <!-- ================================================================== -->
+  <!-- SETUP TAB -->
+  <!-- ================================================================== -->
+  <div class="tab-pane fade show active" id="setupPane" role="tabpanel">
+
+    <!-- Profile Card -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">
+        <i class="bi bi-person-circle me-2"></i>
+        <strong>User Profile</strong>
+        <span id="profileStatus" class="badge ms-auto">Loading...</span>
+      </div>
+      <div class="card-body">
+        <form id="profileForm" class="row g-2 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label small">Name</label>
+            <input type="text" class="form-control form-control-sm" id="pName" required>
+          </div>
+          <div class="col-md-1">
+            <label class="form-label small">Age</label>
+            <input type="number" class="form-control form-control-sm" id="pAge" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small">Weight (kg)</label>
+            <input type="number" step="0.1" class="form-control form-control-sm" id="pWeight" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small">Height (cm)</label>
+            <input type="number" step="0.1" class="form-control form-control-sm" id="pHeight" required>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label small">Gender</label>
+            <select class="form-select form-select-sm" id="pGender">
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <button type="submit" class="btn btn-primary btn-sm w-100">
+              <i class="bi bi-check-lg"></i> Save Profile
+            </button>
+          </div>
+        </form>
+        <div id="profileInfo" class="mt-2 small text-muted"></div>
+      </div>
+    </div>
+
+    <!-- Daemon Control Card -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">
+        <i class="bi bi-cpu me-2"></i>
+        <strong>Step 1 &mdash; Auto-Sync Daemon</strong>
+        <span id="daemonBadge" class="badge ms-auto">Checking...</span>
+      </div>
+      <div class="card-body">
+        <p class="small mb-2 text-muted">
+          The daemon runs in the background and automatically syncs data from Apple Health and Strava every day.
+        </p>
+        <div class="d-flex gap-2 mb-3">
+          <button class="btn btn-success btn-sm" id="btnStartDaemon" disabled>
+            <i class="bi bi-play-fill"></i> Start Daemon
+          </button>
+          <button class="btn btn-danger btn-sm" id="btnStopDaemon" disabled>
+            <i class="bi bi-stop-fill"></i> Stop Daemon
+          </button>
+          <button class="btn btn-outline-secondary btn-sm" id="btnRefreshDaemon">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+          </button>
+        </div>
+
+        <!-- Component configs -->
+        <div class="row g-3">
+          <!-- Apple Health Server -->
+          <div class="col-md-4">
+            <div class="card bg-body-secondary h-100">
+              <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-heart-fill text-danger me-1"></i>Apple Health Server</h6>
+                <div class="form-check form-switch mb-2">
+                  <input class="form-check-input" type="checkbox" id="cfgAppleEnabled" checked>
+                  <label class="form-check-label small" for="cfgAppleEnabled">Enabled</label>
+                </div>
+                <label class="form-label small">Port</label>
+                <input type="number" class="form-control form-control-sm" id="cfgApplePort" value="8090">
+                <div id="appleServerUrl" class="mt-2 small text-info"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Folder Watcher -->
+          <div class="col-md-4">
+            <div class="card bg-body-secondary h-100">
+              <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-folder2-open text-warning me-1"></i>Folder Watcher</h6>
+                <div class="form-check form-switch mb-2">
+                  <input class="form-check-input" type="checkbox" id="cfgFolderEnabled">
+                  <label class="form-check-label small" for="cfgFolderEnabled">Enabled</label>
+                </div>
+                <label class="form-label small">Watch Directory</label>
+                <input type="text" class="form-control form-control-sm" id="cfgFolderDir" placeholder="/path/to/icloud/folder">
+                <label class="form-label small mt-1">Poll Interval (sec)</label>
+                <input type="number" class="form-control form-control-sm" id="cfgFolderInterval" value="60">
+              </div>
+            </div>
+          </div>
+
+          <!-- Strava Scheduler -->
+          <div class="col-md-4">
+            <div class="card bg-body-secondary h-100">
+              <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-bicycle text-success me-1"></i>Strava Scheduler</h6>
+                <div class="form-check form-switch mb-2">
+                  <input class="form-check-input" type="checkbox" id="cfgStravaEnabled" checked>
+                  <label class="form-check-label small" for="cfgStravaEnabled">Enabled</label>
+                </div>
+                <div class="row g-1">
+                  <div class="col-6">
+                    <label class="form-label small">Hour (0-23)</label>
+                    <input type="number" class="form-control form-control-sm" id="cfgStravaHour" value="23" min="0" max="23">
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small">Minute</label>
+                    <input type="number" class="form-control form-control-sm" id="cfgStravaMin" value="0" min="0" max="59">
+                  </div>
+                </div>
+                <div class="form-check form-switch mt-2">
+                  <input class="form-check-input" type="checkbox" id="cfgStravaHR" checked>
+                  <label class="form-check-label small" for="cfgStravaHR">Fetch Heart Rate</label>
+                </div>
+                <div id="stravaLastSync" class="small text-muted mt-1"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-sm mt-3" id="btnSaveConfig">
+          <i class="bi bi-save me-1"></i> Save Configuration
+        </button>
+        <span id="configSaveMsg" class="ms-2 small text-success" style="display:none;">Saved!</span>
+      </div>
+    </div>
+
+    <!-- Apple Health iOS Shortcut Guide -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">
+        <i class="bi bi-phone me-2"></i>
+        <strong>Step 2 &mdash; Apple Health iOS Shortcut (Automatic Daily Sync)</strong>
+        <button class="btn btn-outline-info btn-sm ms-auto" id="btnShowGuide">
+          <i class="bi bi-book"></i> Show Setup Guide
+        </button>
+      </div>
+      <div class="card-body" id="shortcutGuideBody" style="display:none;">
+        <div class="alert alert-info small mb-3">
+          <i class="bi bi-info-circle me-1"></i>
+          This iOS Shortcut runs on your iPhone daily via Personal Automation. It reads HealthKit data
+          (steps, heart rate, sleep, workouts, energy) and POSTs it to the daemon's HTTP server.
+          <strong>No manual export needed after initial setup.</strong>
+        </div>
+        <div class="mb-3">
+          <strong>Server Endpoint:</strong>
+          <code id="shortcutUrl" class="ms-2"></code>
+        </div>
+        <ul class="nav nav-pills mb-2" id="guideSubTabs">
+          <li class="nav-item">
+            <button class="nav-link active btn-sm" data-bs-toggle="pill" data-bs-target="#guideInstructions">Full Guide</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link btn-sm" data-bs-toggle="pill" data-bs-target="#guideCurl">Test with curl</button>
+          </li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="guideInstructions">
+            <pre id="shortcutInstructions" class="bg-body-secondary p-3 rounded small" style="max-height:500px;overflow-y:auto;white-space:pre-wrap;"></pre>
+          </div>
+          <div class="tab-pane fade" id="guideCurl">
+            <pre id="curlCommand" class="bg-body-secondary p-3 rounded small"></pre>
+            <button class="btn btn-outline-secondary btn-sm mt-1" onclick="navigator.clipboard.writeText(document.getElementById('curlCommand').textContent)">
+              <i class="bi bi-clipboard"></i> Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Strava Connection -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">
+        <i class="bi bi-bicycle me-2"></i>
+        <strong>Step 3 &mdash; Strava Connection</strong>
+        <span id="stravaBadge" class="badge ms-auto">Checking...</span>
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-2" id="stravaInfo">
+          Strava is connected via OAuth2. The scheduler will automatically fetch your activities daily.
+        </p>
+        <div class="d-flex gap-2">
+          <button class="btn btn-success btn-sm" id="btnSyncStrava">
+            <i class="bi bi-cloud-download"></i> Sync Now (Last 7 Days)
+          </button>
+        </div>
+        <div id="stravaSyncResult" class="small mt-2" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Sync Log -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">
+        <i class="bi bi-journal-text me-2"></i>
+        <strong>Sync Log</strong>
+        <button class="btn btn-outline-secondary btn-sm ms-auto" id="btnRefreshLog">
+          <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <pre id="syncLog" class="m-0 p-3 small" style="max-height:300px;overflow-y:auto;background:var(--bs-body-bg);">Loading...</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================== -->
+  <!-- RESULTS & ANALYTICS TAB -->
+  <!-- ================================================================== -->
+  <div class="tab-pane fade" id="resultsPane" role="tabpanel">
+
+    <!-- Date range selector -->
+    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+      <div class="btn-group btn-group-sm" id="rangeBtns">
+        <button class="btn btn-outline-primary active" data-days="7">7 Days</button>
+        <button class="btn btn-outline-primary" data-days="14">14 Days</button>
+        <button class="btn btn-outline-primary" data-days="30">30 Days</button>
+      </div>
+      <button class="btn btn-primary btn-sm" id="btnRefreshAnalytics">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
+      <span id="analyticsStatus" class="small text-muted ms-auto"></span>
+    </div>
+
+    <!-- Summary KPI Cards -->
+    <div class="row g-2 mb-3" id="kpiRow">
+      <div class="col-6 col-md-2">
+        <div class="card text-center kpi-card">
+          <div class="card-body py-2">
+            <div class="kpi-value" id="kpiScore">--</div>
+            <div class="kpi-label">Avg Score</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card text-center kpi-card">
+          <div class="card-body py-2">
+            <div class="kpi-value" id="kpiSteps">--</div>
+            <div class="kpi-label">Avg Steps</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card text-center kpi-card">
+          <div class="card-body py-2">
+            <div class="kpi-value" id="kpiSleep">--</div>
+            <div class="kpi-label">Avg Sleep (h)</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card text-center kpi-card">
+          <div class="card-body py-2">
+            <div class="kpi-value" id="kpiCalories">--</div>
+            <div class="kpi-label">Total Calories</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card text-center kpi-card">
+          <div class="card-body py-2">
+            <div class="kpi-value" id="kpiWorkouts">--</div>
+            <div class="kpi-label">Workouts</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-2">
+        <div class="card text-center kpi-card">
+          <div class="card-body py-2">
+            <div class="kpi-value" id="kpiWorkoutMin">--</div>
+            <div class="kpi-label">Workout Min</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header small fw-bold"><i class="bi bi-trophy me-1"></i>Health Score Trend</div>
+          <div class="card-body"><canvas id="chartScore"></canvas></div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header small fw-bold"><i class="bi bi-fire me-1"></i>Daily Calories Burned</div>
+          <div class="card-body"><canvas id="chartCalories"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header small fw-bold"><i class="bi bi-heart-pulse me-1"></i>Heart Rate Trend</div>
+          <div class="card-body"><canvas id="chartHR"></canvas></div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header small fw-bold"><i class="bi bi-bar-chart me-1"></i>Steps & Workout Minutes</div>
+          <div class="card-body"><canvas id="chartActivity"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 3 -->
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header small fw-bold"><i class="bi bi-moon-stars me-1"></i>Sleep Hours</div>
+          <div class="card-body"><canvas id="chartSleep"></canvas></div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header small fw-bold"><i class="bi bi-droplet me-1"></i>Water Intake</div>
+          <div class="card-body"><canvas id="chartWater"></canvas></div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header small fw-bold"><i class="bi bi-pie-chart me-1"></i>Workout Types</div>
+          <div class="card-body"><canvas id="chartWorkoutTypes"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Daily Detail Panel -->
+    <div class="card mb-3">
+      <div class="card-header d-flex align-items-center">
+        <i class="bi bi-calendar-day me-2"></i>
+        <strong>Daily Detail</strong>
+        <input type="date" class="form-control form-control-sm ms-auto" style="width:180px"
+               id="detailDate" value="{{ today }}">
+        <button class="btn btn-primary btn-sm ms-2" id="btnLoadDetail">Load</button>
+      </div>
+      <div class="card-body">
+        <pre id="dailySummaryText" class="small bg-body-secondary p-3 rounded" style="max-height:600px;overflow-y:auto;white-space:pre-wrap;">Select a date and click Load to view the full daily summary.</pre>
+      </div>
+    </div>
+
+    <!-- Recommendations -->
+    <div class="card mb-3" id="recsCard" style="display:none;">
+      <div class="card-header small fw-bold"><i class="bi bi-lightbulb me-1"></i>Age-Based Recommendations</div>
+      <div class="card-body" id="recsBody"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast for notifications -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div id="toast" class="toast" role="alert">
+    <div class="toast-body" id="toastMsg"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
