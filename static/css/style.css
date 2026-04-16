@@ -1,0 +1,139 @@
+/* Health Tracker Web UI - Custom Styles */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+/* KPI cards */
+.kpi-card {
+  border-left: 3px solid var(--bs-primary);
+  transition: transform 0.15s;
+}
+.kpi-card:hover {
+  transform: translateY(-2px);
+}
+.kpi-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--bs-primary);
+  line-height: 1.2;
+}
+.kpi-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--bs-secondary-color);
+}
+
+/* Cards */
+.card {
+  border: 1px solid var(--bs-border-color);
+}
+.card-header {
+  font-size: 0.9rem;
+  padding: 0.6rem 1rem;
+}
+
+/* Nav tabs */
+.nav-tabs .nav-link {
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0.75rem 1rem;
+}
+
+/* Toast */
+.toast {
+  min-width: 250px;
+}
+.toast-body {
+  font-size: 0.85rem;
+}
+
+/* Badges */
+.badge-running {
+  background-color: var(--bs-success) !important;
+  color: #fff;
+}
+.badge-stopped {
+  background-color: var(--bs-danger) !important;
+  color: #fff;
+}
+.badge-connected {
+  background-color: var(--bs-success) !important;
+  color: #fff;
+}
+.badge-disconnected {
+  background-color: var(--bs-warning) !important;
+  color: #000;
+}
+.badge-configured {
+  background-color: var(--bs-info) !important;
+  color: #fff;
+}
+
+/* Chart containers */
+canvas {
+  max-height: 280px;
+}
+
+/* Config sub-cards */
+.bg-body-secondary .card-title {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Summary text */
+#dailySummaryText {
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* Scrollbar styling for dark mode */
+pre::-webkit-scrollbar {
+  width: 6px;
+}
+pre::-webkit-scrollbar-thumb {
+  background: var(--bs-secondary-bg);
+  border-radius: 3px;
+}
+
+/* Sync log */
+#syncLog {
+  font-family: "SF Mono", "Cascadia Code", monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+/* Responsive tweaks */
+@media (max-width: 768px) {
+  .kpi-value { font-size: 1.2rem; }
+  .card-header { font-size: 0.8rem; }
+  canvas { max-height: 220px; }
+}
+
+/* Spinner for loading states */
+.spinner-inline {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Recommendation card */
+#recsBody ul {
+  padding-left: 1.2rem;
+  margin-bottom: 0;
+}
+#recsBody li {
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+}
