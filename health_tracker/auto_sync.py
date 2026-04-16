@@ -306,6 +306,25 @@ class AutoSyncDaemon:
                 pass
 
 
+def _is_process_alive(pid: int) -> bool:
+    """Check if a process with the given PID is alive (cross-platform)."""
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        SYNCHRONIZE = 0x00100000
+        handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return False
+    else:
+        try:
+            os.kill(pid, 0)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+
+
 def is_daemon_running() -> bool:
     """Check if the auto-sync daemon is already running."""
     if not os.path.exists(PID_PATH):
@@ -313,15 +332,15 @@ def is_daemon_running() -> bool:
     try:
         with open(PID_PATH, "r") as f:
             pid = int(f.read().strip())
-        # Check if process is alive
-        os.kill(pid, 0)
-        return True
-    except (ValueError, ProcessLookupError, PermissionError):
+        if _is_process_alive(pid):
+            return True
         # Stale PID file
         try:
             os.unlink(PID_PATH)
         except OSError:
             pass
+        return False
+    except ValueError:
         return False
 
 
@@ -332,9 +351,10 @@ def get_daemon_pid() -> Optional[int]:
     try:
         with open(PID_PATH, "r") as f:
             pid = int(f.read().strip())
-        os.kill(pid, 0)
-        return pid
-    except (ValueError, ProcessLookupError, PermissionError):
+        if _is_process_alive(pid):
+            return pid
+        return None
+    except ValueError:
         return None
 
 
@@ -342,7 +362,16 @@ def stop_daemon():
     """Send stop signal to the running daemon."""
     pid = get_daemon_pid()
     if pid:
-        os.kill(pid, signal.SIGTERM)
+        if sys.platform == "win32":
+            import ctypes
+            PROCESS_TERMINATE = 0x0001
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
+            if handle:
+                kernel32.TerminateProcess(handle, 1)
+                kernel32.CloseHandle(handle)
+        else:
+            os.kill(pid, signal.SIGTERM)
         logger.info(f"Stop signal sent to daemon (PID {pid})")
         return True
     return False
