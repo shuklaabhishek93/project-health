@@ -33,6 +33,7 @@ from health_tracker.integrations.strava import (
     load_strava_token, import_strava, save_strava_token,
     STRAVA_AUTH_URL, STRAVA_TOKEN_URL,
 )
+from health_tracker.integrations.apple_health_server import parse_ios_payload
 
 app = Flask(__name__)
 ensure_data_dir()
@@ -201,14 +202,19 @@ def api_daemon_log():
 def api_shortcut_instructions():
     config = load_config()
     port = config["apple_health_server"]["port"]
-    instructions = generate_shortcut_instructions(port)
-    curl_cmd = generate_test_curl_command(port)
-    local_ip = get_local_ip()
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    base_url = render_url or None
+    instructions = generate_shortcut_instructions(port, base_url=base_url)
+    curl_cmd = generate_test_curl_command(port, base_url=base_url)
+    if render_url:
+        server_url = f"{render_url.rstrip('/')}/sync"
+    else:
+        local_ip = get_local_ip()
+        server_url = f"http://{local_ip}:{port}/sync"
     return jsonify({
         "instructions": instructions,
         "curl_command": curl_cmd,
-        "server_url": f"http://{local_ip}:{port}/sync",
-        "local_ip": local_ip,
+        "server_url": server_url,
     })
 
 
@@ -332,6 +338,50 @@ def api_strava_sync():
         save_config(config)
         return jsonify({"status": "ok", "days_updated": updated, "days_created": created})
     return jsonify({"status": "ok", "days_updated": 0, "days_created": 0})
+
+
+# ---------------------------------------------------------------------------
+# Apple Health Sync (iOS Shortcut endpoint — works on Render)
+# ---------------------------------------------------------------------------
+
+@app.route("/sync", methods=["POST", "GET"])
+@app.route("/api/health/sync", methods=["POST", "GET"])
+def api_health_sync():
+    """Receive health data from iOS Shortcuts.
+
+    This replaces the separate port-8090 server so the same URL works
+    both locally and on Render.  GET /sync acts as a ping.
+    """
+    if request.method == "GET":
+        return jsonify({"status": "ok", "service": "health-tracker", "endpoint": "POST /sync"})
+
+    from datetime import datetime as dt
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return jsonify({"error": "Empty or invalid JSON body"}), 400
+
+        record_date = data.get("date") or dt.now().strftime("%Y-%m-%d")
+        imported = parse_ios_payload(data, record_date)
+
+        existing = load_daily_record(record_date)
+        if existing:
+            from health_tracker.integrations.sync import merge_daily_records
+            merged = merge_daily_records(existing, imported)
+            save_daily_record(merged)
+        else:
+            save_daily_record(imported)
+
+        steps = imported.health_habits.steps if imported.health_habits else 0
+        return jsonify({
+            "status": "success",
+            "date": record_date,
+            "steps": steps,
+            "workouts_imported": len(imported.workouts),
+            "heart_rate_readings": len(imported.heart_rate_readings),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

@@ -107,7 +107,7 @@ class HealthDataHandler(BaseHTTPRequestHandler):
             if not record_date:
                 record_date = datetime.now().strftime("%Y-%m-%d")
 
-            imported = _parse_ios_payload(data, record_date)
+            imported = parse_ios_payload(data, record_date)
 
             # Merge with existing record
             existing = load_daily_record(record_date)
@@ -150,7 +150,7 @@ class HealthDataHandler(BaseHTTPRequestHandler):
         logger.debug(f"HTTP: {format % args}")
 
 
-def _parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
+def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
     """Convert iOS Shortcut JSON payload into a DailyRecord."""
     record = DailyRecord(date=record_date)
 

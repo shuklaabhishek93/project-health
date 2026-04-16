@@ -31,13 +31,19 @@ def get_local_ip() -> str:
         return "YOUR_COMPUTER_IP"
 
 
-def generate_shortcut_instructions(server_port: int = 8090) -> str:
+def generate_shortcut_instructions(server_port: int = 8090, base_url: str | None = None) -> str:
     """
     Generate step-by-step instructions for creating the iOS Shortcut
     and Personal Automation for daily auto-sync.
+
+    If *base_url* is provided (e.g. a Render URL), the /sync endpoint
+    lives on that URL.  Otherwise it defaults to the local-network IP.
     """
-    local_ip = get_local_ip()
-    server_url = f"http://{local_ip}:{server_port}/sync"
+    if base_url:
+        server_url = f"{base_url.rstrip('/')}/sync"
+    else:
+        local_ip = get_local_ip()
+        server_url = f"http://{local_ip}:{server_port}/sync"
 
     instructions = f"""
 ================================================================================
@@ -262,13 +268,17 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
     return instructions
 
 
-def generate_test_curl_command(server_port: int = 8090) -> str:
+def generate_test_curl_command(server_port: int = 8090, base_url: str | None = None) -> str:
     """Generate a curl command to test the sync endpoint."""
-    local_ip = get_local_ip()
+    if base_url:
+        url = f"{base_url.rstrip('/')}/sync"
+    else:
+        local_ip = get_local_ip()
+        url = f"http://{local_ip}:{server_port}/sync"
     today = __import__("datetime").date.today().isoformat()
 
     return (
-        f'curl -X POST http://{local_ip}:{server_port}/sync \\\n'
+        f'curl -X POST {url} \\\n'
         f'  -H "Content-Type: application/json" \\\n'
         f'  -d \'{{\n'
         f'    "date": "{today}",\n'
