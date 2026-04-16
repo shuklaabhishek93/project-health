@@ -39,10 +39,10 @@ def generate_shortcut_instructions(server_port: int = 8090, base_url: str | None
     If *base_url* is provided (e.g. a Render URL), the /sync endpoint
     lives on that URL.  Otherwise it defaults to the local-network IP.
     """
+    local_ip = get_local_ip()
     if base_url:
         server_url = f"{base_url.rstrip('/')}/sync"
     else:
-        local_ip = get_local_ip()
         server_url = f"http://{local_ip}:{server_port}/sync"
 
     instructions = f"""
