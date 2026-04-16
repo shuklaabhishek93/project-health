@@ -222,15 +222,65 @@ async function loadStravaStatus() {
   const d = await api('/api/strava/status');
   const badge = document.getElementById('stravaBadge');
   const info = document.getElementById('stravaInfo');
+  const connectForm = document.getElementById('stravaConnectForm');
   if (d.connected) {
     badge.textContent = 'Connected';
     badge.className = 'badge ms-auto badge-connected';
     info.textContent = 'Strava is connected via OAuth2. The scheduler will automatically fetch your activities daily.';
+    if (connectForm) connectForm.style.display = 'none';
   } else {
     badge.textContent = 'Not Connected';
     badge.className = 'badge ms-auto badge-disconnected';
-    info.innerHTML = 'Strava is not connected. Run <code>python main.py</code> and use option 5 to authorize via OAuth2, then refresh this page.';
+    info.innerHTML = 'Enter your Strava API credentials below to connect.';
+    if (connectForm) connectForm.style.display = 'block';
   }
+}
+
+async function connectStrava() {
+  const clientId = document.getElementById('stravaClientId')?.value?.trim();
+  const clientSecret = document.getElementById('stravaClientSecret')?.value?.trim();
+  const result = document.getElementById('stravaConnectResult');
+  if (!clientId || !clientSecret) {
+    result.textContent = 'Please enter both Client ID and Client Secret.';
+    result.className = 'small mt-2 text-danger';
+    result.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('btnConnectStrava');
+  btn.disabled = true;
+  btn.textContent = 'Redirecting to Strava...';
+  try {
+    const d = await api('/api/strava/connect', { method: 'POST', body: { client_id: clientId, client_secret: clientSecret } });
+    if (d.error) {
+      result.textContent = 'Error: ' + d.error;
+      result.className = 'small mt-2 text-danger';
+      result.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Connect Strava';
+    } else {
+      result.textContent = 'Opening Strava authorization page...';
+      result.className = 'small mt-2 text-info';
+      result.style.display = 'block';
+      window.location.href = d.auth_url;
+    }
+  } catch (e) {
+    result.textContent = 'Error: ' + e.message;
+    result.className = 'small mt-2 text-danger';
+    result.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Connect Strava';
+  }
+}
+
+// Populate the callback domain hint in the connect form
+const domainEl = document.getElementById('stravaCallbackDomain');
+if (domainEl) domainEl.textContent = window.location.hostname;
+
+// Show success message if redirected back from Strava
+if (new URLSearchParams(window.location.search).get('strava') === 'connected') {
+  loadStravaStatus();
+  showToast('Strava connected successfully!');
+  window.history.replaceState({}, '', '/');
 }
 
 document.getElementById('btnSyncStrava').addEventListener('click', async () => {

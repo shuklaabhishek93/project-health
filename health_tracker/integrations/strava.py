@@ -178,6 +178,12 @@ def authorize_strava(client_id: str, client_secret: str) -> Optional[dict]:
     return save_data
 
 
+def save_strava_token(token_data: dict):
+    """Persist a Strava token dict to disk."""
+    with open(get_token_path(), "w") as f:
+        json.dump(token_data, f, indent=2)
+
+
 def load_strava_token() -> Optional[dict]:
     """Load saved Strava token, refreshing if expired."""
     if not check_requests_available():

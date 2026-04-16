@@ -29,13 +29,26 @@ from health_tracker.integrations.sync import sync_imported_records
 from health_tracker.integrations.shortcut_generator import (
     generate_shortcut_instructions, generate_test_curl_command, get_local_ip,
 )
-from health_tracker.integrations.strava import load_strava_token, import_strava
+from health_tracker.integrations.strava import (
+    load_strava_token, import_strava, save_strava_token,
+    STRAVA_AUTH_URL, STRAVA_TOKEN_URL,
+)
 
 app = Flask(__name__)
 ensure_data_dir()
 
 # Keep a reference to the daemon when started from the web UI
 _daemon_instance: AutoSyncDaemon | None = None
+
+
+def _get_base_url() -> str:
+    """Return the externally-visible base URL of this app."""
+    # Render sets RENDER_EXTERNAL_URL automatically
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_url:
+        return render_url.rstrip("/")
+    # Fall back to request host when running locally
+    return request.host_url.rstrip("/")
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +220,95 @@ def api_shortcut_instructions():
 def api_strava_status():
     token = load_strava_token()
     return jsonify({"connected": token is not None})
+
+
+@app.route("/api/strava/connect", methods=["POST"])
+def api_strava_connect():
+    """Start Strava OAuth flow — returns auth URL for the browser to redirect to."""
+    data = request.json or {}
+    client_id = data.get("client_id", "").strip()
+    client_secret = data.get("client_secret", "").strip()
+    if not client_id or not client_secret:
+        return jsonify({"error": "client_id and client_secret are required"}), 400
+
+    # Persist credentials so the callback can use them
+    _save_pending_strava_creds(client_id, client_secret)
+
+    from urllib.parse import urlencode
+    callback_url = f"{_get_base_url()}/strava/callback"
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": callback_url,
+        "scope": "read,activity:read_all",
+        "approval_prompt": "auto",
+    }
+    return jsonify({"auth_url": f"{STRAVA_AUTH_URL}?{urlencode(params)}", "callback_url": callback_url})
+
+
+@app.route("/strava/callback")
+def strava_callback():
+    """Handle OAuth redirect from Strava after user approves access."""
+    import requests as req
+    code = request.args.get("code")
+    error = request.args.get("error")
+    if error or not code:
+        return render_template("index.html", profile=load_profile(),
+                               today=date.today().isoformat(),
+                               strava_error=error or "No code received"), 400
+
+    creds = _load_pending_strava_creds()
+    if not creds:
+        return "Session expired — please try connecting Strava again from the Setup tab.", 400
+
+    resp = req.post(STRAVA_TOKEN_URL, data={
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "code": code,
+        "grant_type": "authorization_code",
+    }, timeout=30)
+
+    if resp.status_code != 200:
+        return f"Token exchange failed: {resp.text}", 400
+
+    token_data = resp.json()
+    save_strava_token({
+        "access_token": token_data["access_token"],
+        "refresh_token": token_data["refresh_token"],
+        "expires_at": token_data["expires_at"],
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+    })
+    _clear_pending_strava_creds()
+    return redirect("/?strava=connected")
+
+
+# ---------------------------------------------------------------------------
+# Strava OAuth helpers
+# ---------------------------------------------------------------------------
+
+def _pending_creds_path() -> str:
+    from health_tracker.storage import DATA_DIR
+    return os.path.join(DATA_DIR, "_pending_strava.json")
+
+
+def _save_pending_strava_creds(client_id: str, client_secret: str):
+    with open(_pending_creds_path(), "w") as f:
+        json.dump({"client_id": client_id, "client_secret": client_secret}, f)
+
+
+def _load_pending_strava_creds() -> dict | None:
+    p = _pending_creds_path()
+    if not os.path.exists(p):
+        return None
+    with open(p) as f:
+        return json.load(f)
+
+
+def _clear_pending_strava_creds():
+    p = _pending_creds_path()
+    if os.path.exists(p):
+        os.unlink(p)
 
 
 @app.route("/api/strava/sync", methods=["POST"])
