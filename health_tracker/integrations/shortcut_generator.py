@@ -117,8 +117,9 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
   Type: "Workout"
   Start Date: "is today"
 
-  --- ACTION 11: Build JSON (Text Action) ---
+  --- ACTION 11: Build JSON Body (Text Action) ---
   Search: "Text"
+  *** RENAME this action: long-press its title → rename to "JSON Body" ***
   Paste this template (the Shortcut will fill in the variables):
 
   {{
@@ -136,21 +137,27 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
   NOTE: Tap on each placeholder like [Steps Value] and select the
   corresponding variable from the previous actions.
 
-  --- ACTION 12: URL Text (prevents Rich Text conversion error) ---
+  --- ACTION 12: Server URL (Text Action) ---
   Search: "Text"
+  *** RENAME this action: long-press its title → rename to "Server URL" ***
   Type ONLY this URL (no spaces, no line breaks):
   {server_url}
 
   --- ACTION 13: Get Contents of URL (HTTP POST) ---
   Search: "Get Contents of URL"
-  URL: Tap the URL field → select the "Text" from Action 12
+  URL: Tap the URL field → select "Server URL" (Action 12)
         (Do NOT type/paste the URL directly — this causes a
         "couldn't convert Rich Text to URL" error)
   Method: POST
   Headers:
     Content-Type: application/json
   Request Body: "File"
-  File: Select the "Text" output from Action 11
+  File: Select "JSON Body" (Action 11)
+
+  ⚠ IMPORTANT: You now have TWO Text actions. Make sure:
+    - The URL field uses "Server URL" (Action 12)
+    - The File field uses "JSON Body" (Action 11)
+    If both show as generic "Text", rename them to tell them apart.
 
 ================================================================================
   PART 2: SIMPLIFIED ALTERNATIVE SHORTCUT
@@ -161,7 +168,7 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
 
   1. Create new shortcut named "Health Sync Simple"
 
-  2. Add action: "Text"
+  2. Add action: "Text" → rename to "JSON Body"
      Content (copy exactly):
 
   {{
@@ -176,16 +183,16 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
     "workouts": []
   }}
 
-  3. Add action: "Text"
+  3. Add action: "Text" → rename to "Server URL"
      Type ONLY this URL (no extra spaces):
      {server_url}
 
   4. Add action: "Get Contents of URL"
-     URL: Tap the field → pick "Text" from step 3
+     URL: Tap the field → pick "Server URL" (step 3)
           (Do NOT type the URL directly — causes a Rich Text error)
      Method: POST
      Headers: Content-Type = application/json
-     Body: File → select Text from step 2
+     Body: File → select "JSON Body" (step 2)
 
 ================================================================================
   PART 3: SET UP DAILY AUTOMATION
