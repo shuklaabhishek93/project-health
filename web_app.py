@@ -32,6 +32,7 @@ from health_tracker.integrations.shortcut_generator import (
 from health_tracker.integrations.strava import load_strava_token, import_strava
 
 app = Flask(__name__)
+ensure_data_dir()
 
 # Keep a reference to the daemon when started from the web UI
 _daemon_instance: AutoSyncDaemon | None = None
@@ -472,5 +473,5 @@ def _record_to_dict(record: DailyRecord) -> dict:
 
 
 if __name__ == "__main__":
-    ensure_data_dir()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)

@@ -88,6 +88,21 @@ python main.py
 python main.py
 ```
 
+### Deploy to Cloud (Access from iPhone)
+
+Deploy to Render for free so the app is accessible from any device without running the laptop:
+
+1. Push this repo to GitHub
+2. Go to [render.com](https://render.com) and sign up with your GitHub account
+3. Click **"New +"** → **"Blueprint"** → select the `project-health` repository
+4. Render detects `render.yaml` and configures everything automatically
+5. Click **"Apply"** → wait for the build to finish (~2 min)
+6. Your app will be live at `https://project-health.onrender.com`
+
+Open that URL on your iPhone and add it to your Home Screen (Safari → Share → Add to Home Screen).
+
+> **Note:** Render free tier spins down after 15 min of inactivity. The first visit after idle takes ~30 seconds to wake up. Data is stored on the server filesystem and persists between deploys, but may be lost if the service is recreated.
+
 ## Project Structure
 
 ```
@@ -118,7 +133,9 @@ project-health/
 ├── data/                                # Auto-created for storing records
 │   ├── sync_config.json                 # Auto-sync configuration
 │   └── auto_sync.log                    # Sync operation log
-└── requirements.txt
+├── requirements.txt
+├── render.yaml                          # Render cloud deployment config
+└── Procfile                             # Production server entry point
 ```
 
 ## Usage
