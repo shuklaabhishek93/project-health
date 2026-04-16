@@ -25,21 +25,68 @@ To monitor and analyze daily health and fitness routine
 
 ## How to Run
 
+Requires Python 3.10+. Download from https://www.python.org/downloads/ if not installed.
+
 ### Web UI (Recommended)
+
+#### macOS / Linux
 ```bash
 pip install -r requirements.txt
 python web_app.py
 ```
+
+#### Windows (PowerShell)
+1. Open **PowerShell** (press `Win + X` → "Windows PowerShell" or search for "PowerShell" in the Start menu)
+2. Navigate to the project folder:
+   ```powershell
+   cd C:\path\to\project-health
+   ```
+3. (First time only) Create and activate a virtual environment:
+   ```powershell
+   python -m venv venv
+   .\venv\Scripts\Activate.ps1
+   ```
+   > If you get an execution policy error, run this first:
+   > ```powershell
+   > Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+   > ```
+4. Install dependencies:
+   ```powershell
+   pip install -r requirements.txt
+   ```
+5. Start the server:
+   ```powershell
+   python web_app.py
+   ```
+6. Open http://localhost:5000 in your browser.
+
+#### Windows (Command Prompt)
+```cmd
+cd C:\path\to\project-health
+python -m venv venv
+venv\Scripts\activate.bat
+pip install -r requirements.txt
+python web_app.py
+```
+
 Open http://localhost:5000 in your browser. The web UI has two tabs:
 - **Setup** - Configure profile, start/stop the auto-sync daemon, view iOS Shortcut guide, manage Strava connection
 - **Results & Analytics** - Interactive charts for health score, calories, heart rate, steps, sleep, water intake, and workout breakdown
 
+#### Access from Phone
+Start the server on your computer, then open `http://<your-computer-ip>:5000` on your phone's browser (both devices must be on the same Wi-Fi network). Find your IP with `ipconfig` (Windows) or `ifconfig` (macOS/Linux).
+
 ### CLI
+
+#### macOS / Linux
 ```bash
 python main.py
 ```
 
-Requires Python 3.10+.
+#### Windows (PowerShell / Command Prompt)
+```powershell
+python main.py
+```
 
 ## Project Structure
 
