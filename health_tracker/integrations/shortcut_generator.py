@@ -136,9 +136,16 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
   NOTE: Tap on each placeholder like [Steps Value] and select the
   corresponding variable from the previous actions.
 
-  --- ACTION 12: Get Contents of URL (HTTP POST) ---
+  --- ACTION 12: URL Text (prevents Rich Text conversion error) ---
+  Search: "Text"
+  Type ONLY this URL (no spaces, no line breaks):
+  {server_url}
+
+  --- ACTION 13: Get Contents of URL (HTTP POST) ---
   Search: "Get Contents of URL"
-  URL: {server_url}
+  URL: Tap the URL field → select the "Text" from Action 12
+        (Do NOT type/paste the URL directly — this causes a
+        "couldn't convert Rich Text to URL" error)
   Method: POST
   Headers:
     Content-Type: application/json
@@ -169,8 +176,13 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
     "workouts": []
   }}
 
-  3. Add action: "Get Contents of URL"
-     URL: {server_url}
+  3. Add action: "Text"
+     Type ONLY this URL (no extra spaces):
+     {server_url}
+
+  4. Add action: "Get Contents of URL"
+     URL: Tap the field → pick "Text" from step 3
+          (Do NOT type the URL directly — causes a Rich Text error)
      Method: POST
      Headers: Content-Type = application/json
      Body: File → select Text from step 2
@@ -213,6 +225,11 @@ def generate_shortcut_instructions(server_port: int = 8090) -> str:
 ================================================================================
   TROUBLESHOOTING
 ================================================================================
+
+  - "Couldn't convert from Rich Text to URL":
+    Don't type/paste the URL directly into "Get Contents of URL".
+    Instead, put the URL in a separate "Text" action first, then
+    tap the URL field and pick that Text variable.
 
   - "Could not connect to server":
     Make sure both devices are on the same Wi-Fi network.
