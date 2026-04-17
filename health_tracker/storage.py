@@ -16,7 +16,7 @@ from .models import (
     HeartRateEntry,
     DailyRecord,
 )
-from .db_storage import is_db_enabled, db_put, db_get, db_list_keys
+from .db_storage import is_db_enabled, db_put, db_get, db_get_many, db_list_keys
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
@@ -202,6 +202,18 @@ def load_daily_record(record_date: str) -> Optional[DailyRecord]:
     with open(filepath, "r") as f:
         data = json.load(f)
     return _json_to_record(data)
+
+
+def load_daily_records_batch(dates: list[str]) -> dict[str, Optional[DailyRecord]]:
+    """Load multiple daily records in one database round-trip."""
+    if is_db_enabled():
+        keys = [f"record_{d}" for d in dates]
+        raw = db_get_many(keys)
+        return {
+            d: _json_to_record(raw[f"record_{d}"]) if f"record_{d}" in raw else None
+            for d in dates
+        }
+    return {d: load_daily_record(d) for d in dates}
 
 
 def list_all_records() -> list[str]:

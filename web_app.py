@@ -16,7 +16,7 @@ from health_tracker.calculator import (
 )
 from health_tracker.storage import (
     save_profile, load_profile, save_daily_record, load_daily_record,
-    list_all_records, ensure_data_dir, DATA_DIR,
+    load_daily_records_batch, list_all_records, ensure_data_dir, DATA_DIR,
 )
 from health_tracker.summary import (
     generate_daily_summary, calculate_health_score, get_score_rating,
@@ -446,10 +446,12 @@ def api_analytics_range():
     end = date.today()
     start = end - timedelta(days=days - 1)
 
+    date_list = [(start + timedelta(days=i)).isoformat() for i in range(days)]
+    records_map = load_daily_records_batch(date_list)
+
     results = []
-    for i in range(days):
-        d = (start + timedelta(days=i)).isoformat()
-        record = load_daily_record(d)
+    for d in date_list:
+        record = records_map.get(d)
         if not record:
             results.append({"date": d, "has_data": False})
             continue
