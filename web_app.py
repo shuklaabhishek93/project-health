@@ -680,19 +680,15 @@ def _clean_shortcut_json(raw: str) -> str:
 
     # Replace any non-JSON value for array fields with []
     raw = re.sub(
-        r'"(heart_rate_readings|workouts)"\s*:\s*(?!\[)(.+?)(?=,\s*"|\s*})',
+        r'"(heart_rate_readings|workouts)"\s*:\s*(?!\[)(.+?)(?=,\s*"|\s*\})',
         r'"\1": []',
         raw,
     )
 
     # Replace any non-numeric value for numeric fields with 0
-    for field in ("steps", "sleep_hours", "active_energy", "resting_energy",
-                  "distance_km", "flights_climbed"):
-        raw = re.sub(
-            rf'"{field}"\s*:\s*(?!"|\[|\{{)([^,\}}}]*[^0-9.\-,\}}}][^,\}}}]*)',
-            f'"{field}": 0',
-            raw,
-        )
+    numeric_fields = "steps|sleep_hours|active_energy|resting_energy|distance_km|flights_climbed"
+    pattern = r'"(' + numeric_fields + r')"\s*:\s*(?!"|\[|\{)([^,\}]*[^0-9.\-,\}][^,\}]*)'
+    raw = re.sub(pattern, r'"\1": 0', raw)
 
     return raw
 
