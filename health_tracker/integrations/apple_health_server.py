@@ -106,6 +106,8 @@ class HealthDataHandler(BaseHTTPRequestHandler):
             record_date = data.get("date")
             if not record_date:
                 record_date = datetime.now().strftime("%Y-%m-%d")
+            if "T" in record_date:
+                record_date = record_date.split("T")[0]
 
             imported = parse_ios_payload(data, record_date)
 
@@ -150,20 +152,39 @@ class HealthDataHandler(BaseHTTPRequestHandler):
         logger.debug(f"HTTP: {format % args}")
 
 
+def _safe_int(val, default=0) -> int:
+    """Convert a value to int, handling strings and floats from iOS Shortcuts."""
+    if val is None or val == "" or val == []:
+        return default
+    try:
+        return int(float(str(val).strip().replace(",", "")))
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(val, default=0.0) -> float:
+    """Convert a value to float, handling strings from iOS Shortcuts."""
+    if val is None or val == "" or val == []:
+        return default
+    try:
+        return float(str(val).strip().replace(",", ""))
+    except (ValueError, TypeError):
+        return default
+
+
 def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
     """Convert iOS Shortcut JSON payload into a DailyRecord."""
     record = DailyRecord(date=record_date)
 
-    # Parse health habits
     record.health_habits = HealthHabit(
         date=record_date,
-        steps=int(data.get("steps", 0)),
-        sleep_hours=float(data.get("sleep_hours", 0)),
-        active_energy_burned=float(data.get("active_energy", 0)),
-        resting_energy_burned=float(data.get("resting_energy", 0)),
-        distance_walked_km=float(data.get("distance_km", 0)),
-        flights_climbed=int(data.get("flights_climbed", 0)),
-        water_intake_liters=float(data.get("water_ml", 0)) / 1000.0,
+        steps=_safe_int(data.get("steps")),
+        sleep_hours=_safe_float(data.get("sleep_hours")),
+        active_energy_burned=_safe_float(data.get("active_energy")),
+        resting_energy_burned=_safe_float(data.get("resting_energy")),
+        distance_walked_km=_safe_float(data.get("distance_km")),
+        flights_climbed=_safe_int(data.get("flights_climbed")),
+        water_intake_liters=_safe_float(data.get("water_ml")) / 1000.0,
     )
 
     # Parse workouts

@@ -405,6 +405,11 @@ def api_health_sync():
                 }), 400
 
         record_date = data.get("date") or dt.now().strftime("%Y-%m-%d")
+        # Normalize date — iOS Shortcuts may send full ISO datetime
+        if "T" in record_date:
+            record_date = record_date.split("T")[0]
+        if len(record_date) > 10:
+            record_date = record_date[:10]
         imported = parse_ios_payload(data, record_date)
 
         existing = load_daily_record(record_date)
