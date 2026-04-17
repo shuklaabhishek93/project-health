@@ -16,7 +16,7 @@ from health_tracker.calculator import (
 )
 from health_tracker.storage import (
     save_profile, load_profile, save_daily_record, load_daily_record,
-    list_all_records, ensure_data_dir,
+    list_all_records, ensure_data_dir, DATA_DIR,
 )
 from health_tracker.summary import (
     generate_daily_summary, calculate_health_score, get_score_rating,
@@ -293,18 +293,22 @@ def strava_callback():
 # Strava OAuth helpers
 # ---------------------------------------------------------------------------
 
-def _pending_creds_path() -> str:
-    from health_tracker.storage import DATA_DIR
-    return os.path.join(DATA_DIR, "_pending_strava.json")
-
-
 def _save_pending_strava_creds(client_id: str, client_secret: str):
-    with open(_pending_creds_path(), "w") as f:
-        json.dump({"client_id": client_id, "client_secret": client_secret}, f)
+    from health_tracker.db_storage import is_db_enabled, db_put
+    data = {"client_id": client_id, "client_secret": client_secret}
+    if is_db_enabled():
+        db_put("_pending_strava", data)
+    else:
+        p = os.path.join(DATA_DIR, "_pending_strava.json")
+        with open(p, "w") as f:
+            json.dump(data, f)
 
 
 def _load_pending_strava_creds() -> dict | None:
-    p = _pending_creds_path()
+    from health_tracker.db_storage import is_db_enabled, db_get
+    if is_db_enabled():
+        return db_get("_pending_strava")
+    p = os.path.join(DATA_DIR, "_pending_strava.json")
     if not os.path.exists(p):
         return None
     with open(p) as f:
@@ -312,9 +316,13 @@ def _load_pending_strava_creds() -> dict | None:
 
 
 def _clear_pending_strava_creds():
-    p = _pending_creds_path()
-    if os.path.exists(p):
-        os.unlink(p)
+    from health_tracker.db_storage import is_db_enabled, db_delete
+    if is_db_enabled():
+        db_delete("_pending_strava")
+    else:
+        p = os.path.join(DATA_DIR, "_pending_strava.json")
+        if os.path.exists(p):
+            os.unlink(p)
 
 
 @app.route("/api/strava/sync", methods=["POST"])

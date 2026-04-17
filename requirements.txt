@@ -9,4 +9,7 @@ flask>=3.0.0
 # Production WSGI server (used by Render)
 gunicorn>=21.2.0
 
+# PostgreSQL driver (used by Render for persistent storage)
+psycopg2-binary>=2.9.0
+
 # Apple Health import and manual tracking use only the standard library

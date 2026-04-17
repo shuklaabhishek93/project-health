@@ -56,11 +56,16 @@ DEFAULT_CONFIG = {
 
 def load_config() -> dict:
     """Load sync configuration, creating defaults if needed."""
-    ensure_data_dir()
-    if os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "r") as f:
-            saved = json.load(f)
-        # Merge with defaults (in case new fields were added)
+    from .db_storage import is_db_enabled, db_get
+    saved = None
+    if is_db_enabled():
+        saved = db_get("sync_config")
+    else:
+        ensure_data_dir()
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                saved = json.load(f)
+    if saved:
         config = DEFAULT_CONFIG.copy()
         for key, value in saved.items():
             if isinstance(value, dict) and key in config and isinstance(config[key], dict):
@@ -73,9 +78,13 @@ def load_config() -> dict:
 
 def save_config(config: dict):
     """Save sync configuration."""
-    ensure_data_dir()
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
+    from .db_storage import is_db_enabled, db_put
+    if is_db_enabled():
+        db_put("sync_config", config)
+    else:
+        ensure_data_dir()
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config, f, indent=2)
 
 
 def setup_logging():

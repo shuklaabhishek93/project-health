@@ -179,9 +179,13 @@ def authorize_strava(client_id: str, client_secret: str) -> Optional[dict]:
 
 
 def save_strava_token(token_data: dict):
-    """Persist a Strava token dict to disk."""
-    with open(get_token_path(), "w") as f:
-        json.dump(token_data, f, indent=2)
+    """Persist a Strava token dict."""
+    from ..db_storage import is_db_enabled, db_put
+    if is_db_enabled():
+        db_put("strava_token", token_data)
+    else:
+        with open(get_token_path(), "w") as f:
+            json.dump(token_data, f, indent=2)
 
 
 def load_strava_token() -> Optional[dict]:
@@ -189,16 +193,21 @@ def load_strava_token() -> Optional[dict]:
     if not check_requests_available():
         return None
 
-    token_path = get_token_path()
-    if not os.path.exists(token_path):
-        return None
+    from ..db_storage import is_db_enabled, db_get
+    if is_db_enabled():
+        token_data = db_get("strava_token")
+    else:
+        token_path = get_token_path()
+        if not os.path.exists(token_path):
+            return None
+        with open(token_path, "r") as f:
+            token_data = json.load(f)
 
-    with open(token_path, "r") as f:
-        token_data = json.load(f)
+    if not token_data:
+        return None
 
     # Check if token is expired
     if token_data.get("expires_at", 0) < time.time():
-        print("  Strava token expired, refreshing...")
         response = requests.post(STRAVA_TOKEN_URL, data={
             "client_id": token_data["client_id"],
             "client_secret": token_data["client_secret"],
@@ -207,7 +216,6 @@ def load_strava_token() -> Optional[dict]:
         }, timeout=30)
 
         if response.status_code != 200:
-            print(f"  ERROR: Token refresh failed. Please re-authorize.")
             return None
 
         new_data = response.json()
@@ -215,10 +223,7 @@ def load_strava_token() -> Optional[dict]:
         token_data["refresh_token"] = new_data["refresh_token"]
         token_data["expires_at"] = new_data["expires_at"]
 
-        with open(token_path, "w") as f:
-            json.dump(token_data, f, indent=2)
-
-        print("  Token refreshed successfully.")
+        save_strava_token(token_data)
 
     return token_data
 
