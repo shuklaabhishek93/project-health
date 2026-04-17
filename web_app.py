@@ -364,23 +364,45 @@ def api_health_sync():
         return jsonify({"status": "ok", "service": "health-tracker", "endpoint": "POST /sync"})
 
     from datetime import datetime as dt
-    import re
     try:
+        # Try multiple ways to get the body — iOS Shortcuts sends data differently
+        # depending on the "Request Body" setting (JSON vs File vs Form).
         data = request.get_json(force=True, silent=True)
+
         if not data:
+            # Try raw body
             raw = request.get_data(as_text=True)
-            if raw:
-                cleaned = _clean_shortcut_json(raw)
-                try:
-                    data = json.loads(cleaned)
-                except json.JSONDecodeError:
-                    return jsonify({
-                        "error": "Invalid JSON body",
-                        "hint": "Make sure heart_rate_readings and workouts are set to [] in the Shortcut",
-                        "received_preview": raw[:500],
-                    }), 400
-            else:
-                return jsonify({"error": "Empty request body"}), 400
+
+            # Try file upload (Shortcuts "File" body type)
+            if not raw and request.files:
+                for f in request.files.values():
+                    raw = f.read().decode("utf-8", errors="replace")
+                    break
+
+            # Try form data
+            if not raw and request.form:
+                raw = next(iter(request.form.keys()), "") + next(iter(request.form.values()), "")
+
+            if not raw:
+                return jsonify({
+                    "error": "Empty request body",
+                    "debug": {
+                        "content_type": request.content_type,
+                        "content_length": request.content_length,
+                        "has_files": bool(request.files),
+                        "has_form": bool(request.form),
+                    }
+                }), 400
+
+            cleaned = _clean_shortcut_json(raw)
+            try:
+                data = json.loads(cleaned)
+            except json.JSONDecodeError:
+                return jsonify({
+                    "error": "Could not parse JSON",
+                    "hint": "Set heart_rate_readings and workouts to [] in the Shortcut",
+                    "received_preview": raw[:500],
+                }), 400
 
         record_date = data.get("date") or dt.now().strftime("%Y-%m-%d")
         imported = parse_ios_payload(data, record_date)
