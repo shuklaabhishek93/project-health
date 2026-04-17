@@ -364,10 +364,23 @@ def api_health_sync():
         return jsonify({"status": "ok", "service": "health-tracker", "endpoint": "POST /sync"})
 
     from datetime import datetime as dt
+    import re
     try:
         data = request.get_json(force=True, silent=True)
         if not data:
-            return jsonify({"error": "Empty or invalid JSON body"}), 400
+            raw = request.get_data(as_text=True)
+            if raw:
+                cleaned = _clean_shortcut_json(raw)
+                try:
+                    data = json.loads(cleaned)
+                except json.JSONDecodeError:
+                    return jsonify({
+                        "error": "Invalid JSON body",
+                        "hint": "Make sure heart_rate_readings and workouts are set to [] in the Shortcut",
+                        "received_preview": raw[:500],
+                    }), 400
+            else:
+                return jsonify({"error": "Empty request body"}), 400
 
         record_date = data.get("date") or dt.now().strftime("%Y-%m-%d")
         imported = parse_ios_payload(data, record_date)
@@ -632,6 +645,34 @@ def _record_to_dict(record: DailyRecord) -> dict:
         "context": hr.context, "source": hr.source,
     } for hr in record.heart_rate_readings]
     return d
+
+
+def _clean_shortcut_json(raw: str) -> str:
+    """Best-effort cleanup of iOS Shortcut JSON output.
+
+    HealthKit variables for heart_rate_readings and workouts often expand
+    into non-JSON text.  This strips those fields back to empty arrays and
+    coerces non-numeric values to 0.
+    """
+    import re
+
+    # Replace any non-JSON value for array fields with []
+    raw = re.sub(
+        r'"(heart_rate_readings|workouts)"\s*:\s*(?!\[)(.+?)(?=,\s*"|\s*})',
+        r'"\1": []',
+        raw,
+    )
+
+    # Replace any non-numeric value for numeric fields with 0
+    for field in ("steps", "sleep_hours", "active_energy", "resting_energy",
+                  "distance_km", "flights_climbed"):
+        raw = re.sub(
+            rf'"{field}"\s*:\s*(?!"|\[|\{{)([^,\}}}]*[^0-9.\-,\}}}][^,\}}}]*)',
+            f'"{field}": 0',
+            raw,
+        )
+
+    return raw
 
 
 if __name__ == "__main__":
