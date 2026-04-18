@@ -420,11 +420,16 @@ def api_health_sync():
         else:
             save_daily_record(imported)
 
-        steps = imported.health_habits.steps if imported.health_habits else 0
+        h = imported.health_habits
         return jsonify({
             "status": "success",
             "date": record_date,
-            "steps": steps,
+            "steps": h.steps if h else 0,
+            "sleep_hours": h.sleep_hours if h else 0,
+            "active_energy": h.active_energy_burned if h else 0,
+            "resting_energy": h.resting_energy_burned if h else 0,
+            "distance_km": h.distance_walked_km if h else 0,
+            "flights_climbed": h.flights_climbed if h else 0,
             "workouts_imported": len(imported.workouts),
             "heart_rate_readings": len(imported.heart_rate_readings),
         })

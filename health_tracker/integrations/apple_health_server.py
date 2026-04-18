@@ -176,14 +176,26 @@ def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
     """Convert iOS Shortcut JSON payload into a DailyRecord."""
     record = DailyRecord(date=record_date)
 
+    # Distance: accept distance_km, distance_miles, or distance
+    distance_km = _safe_float(data.get("distance_km"))
+    if distance_km == 0:
+        miles = _safe_float(data.get("distance_miles"))
+        if miles > 0:
+            distance_km = miles * 1.60934
+    if distance_km == 0:
+        distance_km = _safe_float(data.get("distance"))
+
+    # Flights: accept typo "flights_climed"
+    flights = _safe_int(data.get("flights_climbed")) or _safe_int(data.get("flights_climed"))
+
     record.health_habits = HealthHabit(
         date=record_date,
         steps=_safe_int(data.get("steps")),
         sleep_hours=_safe_float(data.get("sleep_hours")),
         active_energy_burned=_safe_float(data.get("active_energy")),
         resting_energy_burned=_safe_float(data.get("resting_energy")),
-        distance_walked_km=_safe_float(data.get("distance_km")),
-        flights_climbed=_safe_int(data.get("flights_climbed")),
+        distance_walked_km=distance_km,
+        flights_climbed=flights,
         water_intake_liters=_safe_float(data.get("water_ml")) / 1000.0,
     )
 
