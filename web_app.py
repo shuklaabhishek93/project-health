@@ -448,8 +448,33 @@ def api_list_records():
     return jsonify({"dates": list_all_records()})
 
 
-@app.route("/api/records/<record_date>", methods=["GET"])
+@app.route("/api/records/flush", methods=["POST"])
+def api_flush_records():
+    """Delete all daily records. Strava/Apple Health can re-sync fresh data."""
+    from health_tracker.db_storage import is_db_enabled, db_delete, db_list_keys
+    dates = list_all_records()
+    if is_db_enabled():
+        for key in db_list_keys("record_"):
+            db_delete(key)
+    else:
+        for d in dates:
+            path = os.path.join(DATA_DIR, f"record_{d}.json")
+            if os.path.exists(path):
+                os.unlink(path)
+    return jsonify({"status": "flushed", "records_deleted": len(dates)})
+
+
+@app.route("/api/records/<record_date>", methods=["GET", "DELETE"])
 def api_get_record(record_date):
+    if request.method == "DELETE":
+        from health_tracker.db_storage import is_db_enabled, db_delete
+        if is_db_enabled():
+            db_delete(f"record_{record_date}")
+        else:
+            path = os.path.join(DATA_DIR, f"record_{record_date}.json")
+            if os.path.exists(path):
+                os.unlink(path)
+        return jsonify({"status": "deleted", "date": record_date})
     record = load_daily_record(record_date)
     if not record:
         return jsonify({"error": "not found"}), 404
