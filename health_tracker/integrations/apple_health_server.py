@@ -172,6 +172,30 @@ def _safe_float(val, default=0.0) -> float:
         return default
 
 
+def _calc_sleep_hours(sleep_start, sleep_end) -> float:
+    """Calculate sleep duration from start/end timestamps sent by iOS Shortcut."""
+    if not sleep_start or not sleep_end:
+        return 0.0
+    try:
+        start_str = str(sleep_start).strip()
+        end_str = str(sleep_end).strip()
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%z",
+                     "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M%z", "%b %d, %Y at %I:%M %p",
+                     "%b %d, %Y at %I:%M:%S %p"):
+            try:
+                start = datetime.strptime(start_str, fmt)
+                end = datetime.strptime(end_str, fmt)
+                diff = (end - start).total_seconds() / 3600.0
+                if 0 < diff < 24:
+                    return round(diff, 2)
+                return 0.0
+            except ValueError:
+                continue
+    except Exception:
+        pass
+    return 0.0
+
+
 def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
     """Convert iOS Shortcut JSON payload into a DailyRecord."""
     record = DailyRecord(date=record_date)
@@ -188,10 +212,15 @@ def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
     # Flights: accept typo "flights_climed"
     flights = _safe_int(data.get("flights_climbed")) or _safe_int(data.get("flights_climed"))
 
+    # Sleep: calculate from sleep_start/sleep_end if sleep_hours is 0
+    sleep_hours = _safe_float(data.get("sleep_hours"))
+    if sleep_hours == 0:
+        sleep_hours = _calc_sleep_hours(data.get("sleep_start"), data.get("sleep_end"))
+
     record.health_habits = HealthHabit(
         date=record_date,
         steps=_safe_int(data.get("steps")),
-        sleep_hours=_safe_float(data.get("sleep_hours")),
+        sleep_hours=sleep_hours,
         active_energy_burned=_safe_float(data.get("active_energy")),
         resting_energy_burned=_safe_float(data.get("resting_energy")),
         distance_walked_km=distance_km,

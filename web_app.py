@@ -426,6 +426,8 @@ def api_health_sync():
             "date": record_date,
             "steps": h.steps if h else 0,
             "sleep_hours": h.sleep_hours if h else 0,
+            "sleep_start_received": data.get("sleep_start", ""),
+            "sleep_end_received": data.get("sleep_end", ""),
             "active_energy": h.active_energy_burned if h else 0,
             "resting_energy": h.resting_energy_burned if h else 0,
             "distance_km": h.distance_walked_km if h else 0,
