@@ -1,35 +1,22 @@
 """
 HTTP server that receives Apple Health & Fitness data pushed from iOS Shortcuts.
 
-This server runs in the background and listens for JSON payloads from an iOS
-Shortcut that queries HealthKit on the iPhone. The Shortcut runs automatically
-via iOS Personal Automation (e.g., daily at 11 PM) — no human intervention.
-
-Expected JSON payload format (POST /sync):
+Expected JSON payload from simplified iOS Shortcut (POST /sync):
 {
-  "date": "2026-04-12",
-  "steps": 10500,
-  "sleep_hours": 7.5,
-  "heart_rate_readings": [
-    {"time": "07:00", "bpm": 62, "context": "morning"},
-    {"time": "14:00", "bpm": 78, "context": "resting"}
-  ],
+  "date": "2026-04-18",
+  "steps": 15788,
   "active_energy": 520.0,
   "resting_energy": 1700.0,
-  "distance_km": 8.2,
+  "distance": 8.2,
   "flights_climbed": 12,
-  "water_ml": 2500,
-  "workouts": [
-    {
-      "type": "running",
-      "duration_minutes": 35,
-      "distance_km": 5.5,
-      "calories": 380,
-      "avg_heart_rate": 152,
-      "start_time": "09:00"
-    }
-  ]
+  "sleep_start": "2026-04-17 23:15",
+  "sleep_end": "2026-04-18 06:45"
 }
+
+The server handles all conversions:
+- sleep_start + sleep_end → sleep_hours (calculated server-side)
+- distance/distance_miles → converted to km
+- Any field name typos/variations accepted
 """
 
 import json
@@ -172,6 +159,15 @@ def _safe_float(val, default=0.0) -> float:
         return default
 
 
+def _first_of(data: dict, *keys) -> object:
+    """Return the first non-empty value found for any of the given keys."""
+    for k in keys:
+        v = data.get(k)
+        if v is not None and v != "" and v != []:
+            return v
+    return None
+
+
 def _calc_sleep_hours(sleep_start, sleep_end) -> float:
     """Calculate sleep duration from start/end timestamps sent by iOS Shortcut."""
     if not sleep_start or not sleep_end:
@@ -179,9 +175,18 @@ def _calc_sleep_hours(sleep_start, sleep_end) -> float:
     try:
         start_str = str(sleep_start).strip()
         end_str = str(sleep_end).strip()
-        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S%z",
-                     "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M%z", "%b %d, %Y at %I:%M %p",
-                     "%b %d, %Y at %I:%M:%S %p"):
+        formats = [
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+            "%b %d, %Y at %I:%M %p",
+            "%b %d, %Y at %I:%M:%S %p",
+            "%m/%d/%Y %H:%M",
+            "%m/%d/%Y %I:%M %p",
+            "%d/%m/%Y %H:%M",
+        ]
+        for fmt in formats:
             try:
                 start = datetime.strptime(start_str, fmt)
                 end = datetime.strptime(end_str, fmt)
@@ -196,49 +201,67 @@ def _calc_sleep_hours(sleep_start, sleep_end) -> float:
     return 0.0
 
 
+def _parse_distance_km(data: dict) -> float:
+    """Extract distance in km, accepting km, miles, or raw values."""
+    km = _safe_float(_first_of(data, "distance_km"))
+    if km > 0:
+        return km
+
+    miles = _safe_float(_first_of(data, "distance_miles"))
+    if miles > 0:
+        return round(miles * 1.60934, 2)
+
+    raw = _safe_float(_first_of(data, "distance", "walking_running_distance"))
+    if raw > 0:
+        if raw > 100:
+            return round(raw / 1000.0, 2)
+        return raw
+
+    return 0.0
+
+
 def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
-    """Convert iOS Shortcut JSON payload into a DailyRecord."""
+    """Convert iOS Shortcut JSON payload into a DailyRecord.
+
+    Accepts flexible field names and does all conversions server-side.
+    """
     record = DailyRecord(date=record_date)
 
-    # Distance: accept distance_km, distance_miles, or distance
-    distance_km = _safe_float(data.get("distance_km"))
-    if distance_km == 0:
-        miles = _safe_float(data.get("distance_miles"))
-        if miles > 0:
-            distance_km = miles * 1.60934
-    if distance_km == 0:
-        distance_km = _safe_float(data.get("distance"))
-
-    # Flights: accept typo "flights_climed"
-    flights = _safe_int(data.get("flights_climbed")) or _safe_int(data.get("flights_climed"))
-
-    # Sleep: calculate from sleep_start/sleep_end if sleep_hours is 0
-    sleep_hours = _safe_float(data.get("sleep_hours"))
+    # Sleep: prefer explicit sleep_hours, otherwise calculate from timestamps
+    sleep_hours = _safe_float(_first_of(data, "sleep_hours", "sleep"))
     if sleep_hours == 0:
-        sleep_hours = _calc_sleep_hours(data.get("sleep_start"), data.get("sleep_end"))
+        sleep_start = _first_of(data, "sleep_start", "sleepStart", "sleep_start_time")
+        sleep_end = _first_of(data, "sleep_end", "sleepEnd", "sleep_end_time")
+        sleep_hours = _calc_sleep_hours(sleep_start, sleep_end)
 
     record.health_habits = HealthHabit(
         date=record_date,
-        steps=_safe_int(data.get("steps")),
+        steps=_safe_int(_first_of(data, "steps", "step_count")),
         sleep_hours=sleep_hours,
-        active_energy_burned=_safe_float(data.get("active_energy")),
-        resting_energy_burned=_safe_float(data.get("resting_energy")),
-        distance_walked_km=distance_km,
-        flights_climbed=flights,
-        water_intake_liters=_safe_float(data.get("water_ml")) / 1000.0,
+        active_energy_burned=_safe_float(
+            _first_of(data, "active_energy", "active_calories", "active_energy_burned")
+        ),
+        resting_energy_burned=_safe_float(
+            _first_of(data, "resting_energy", "resting_calories", "basal_energy", "resting_energy_burned")
+        ),
+        distance_walked_km=_parse_distance_km(data),
+        flights_climbed=_safe_int(
+            _first_of(data, "flights_climbed", "flights_climed", "flights", "floor_count")
+        ),
+        water_intake_liters=_safe_float(_first_of(data, "water_ml", "water")) / 1000.0
+        if _first_of(data, "water_ml", "water") else 0.0,
     )
 
     # Parse workouts
-    for i, w in enumerate(data.get("workouts", [])):
+    for w in data.get("workouts", []):
         workout_type = w.get("type", "other").lower().replace(" ", "_")
         mapped_type = IOS_WORKOUT_TYPE_MAP.get(workout_type, workout_type)
         start_time = w.get("start_time", "00:00")
         ext_id = f"apple_auto_{record_date}_{start_time}_{mapped_type}"
 
-        dur = int(w.get("duration_minutes", 0))
-        cal = float(w.get("calories", 0))
+        dur = _safe_int(w.get("duration_minutes"))
+        cal = _safe_float(w.get("calories"))
 
-        # Infer intensity from cal/min ratio
         if dur > 0 and cal > 0:
             cpm = cal / dur
             intensity = "vigorous" if cpm > 10 else ("moderate" if cpm > 5 else "light")
@@ -250,9 +273,9 @@ def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
             workout_type=mapped_type,
             duration_minutes=dur,
             intensity=intensity,
-            distance_km=float(w["distance_km"]) if w.get("distance_km") else None,
+            distance_km=_safe_float(w.get("distance_km")) or None,
             calories_reported=cal if cal > 0 else None,
-            avg_heart_rate=int(w["avg_heart_rate"]) if w.get("avg_heart_rate") else None,
+            avg_heart_rate=_safe_int(w.get("avg_heart_rate")) or None,
             source="apple_health",
             external_id=ext_id,
         ))
@@ -260,7 +283,7 @@ def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
     # Parse heart rate readings
     for hr in data.get("heart_rate_readings", []):
         hr_time = hr.get("time", "00:00")
-        bpm = int(hr.get("bpm", 0))
+        bpm = _safe_int(hr.get("bpm"))
         if bpm <= 0:
             continue
         ext_id = f"apple_auto_hr_{record_date}_{hr_time}_{bpm}"
