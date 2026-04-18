@@ -23,9 +23,9 @@ def merge_daily_records(existing: DailyRecord, imported: DailyRecord) -> DailyRe
         h = existing.health_habits
         imp = imported.health_habits
 
-        # Device-reported fields: take the higher/imported value
+        # Steps: always use Apple Health value (Strava doesn't report steps)
         if imp.steps > 0:
-            h.steps = max(h.steps, imp.steps)
+            h.steps = imp.steps
         if imp.sleep_hours > 0:
             h.sleep_hours = max(h.sleep_hours, imp.sleep_hours)
         if imp.active_energy_burned > 0:
