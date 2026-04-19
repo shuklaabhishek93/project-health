@@ -53,7 +53,7 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
         lines.append(f"  Calories (steps): {step_calories} cal")
 
         if habits.distance_walked_km > 0:
-            lines.append(f"  Walk/Run Dist:    {habits.distance_walked_km} km")
+            lines.append(f"  Walk/Run Dist:    {round(habits.distance_walked_km * 0.621371, 2)} mi")
         if habits.flights_climbed > 0:
             lines.append(f"  Flights Climbed:  {habits.flights_climbed}")
 
@@ -101,7 +101,7 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
             lines.append(f"    Duration:    {workout.duration_minutes} min")
             lines.append(f"    Intensity:   {workout.intensity.title()}")
             if workout.distance_km:
-                lines.append(f"    Distance:    {workout.distance_km} km")
+                lines.append(f"    Distance:    {round(workout.distance_km * 0.621371, 2)} mi")
             if workout.sets and workout.reps:
                 lines.append(f"    Sets/Reps:   {workout.sets} x {workout.reps}")
             if workout.weight_lifted_kg:

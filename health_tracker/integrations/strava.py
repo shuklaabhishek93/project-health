@@ -468,7 +468,7 @@ def import_strava(
 
         print(f"    [{i + 1}/{len(activities)}] {activity.get('name', 'Activity')} - "
               f"{mapped_type}, {duration_minutes}min"
-              f"{f', {distance_km}km' if distance_km else ''}"
+              f"{f', {round(distance_km * 0.621371, 2)}mi' if distance_km else ''}"
               f"{f', {avg_hr}bpm avg' if avg_hr else ''}")
 
     print(f"\n  Strava import complete!")

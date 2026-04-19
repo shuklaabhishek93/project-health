@@ -430,7 +430,7 @@ def api_health_sync():
             "sleep_end_received": data.get("sleep_end", ""),
             "active_energy": h.active_energy_burned if h else 0,
             "resting_energy": h.resting_energy_burned if h else 0,
-            "distance_km": h.distance_walked_km if h else 0,
+            "distance_miles": round(h.distance_walked_km * 0.621371, 2) if h else 0,
             "flights_climbed": h.flights_climbed if h else 0,
             "workouts_imported": len(imported.workouts),
             "heart_rate_readings": len(imported.heart_rate_readings),
@@ -665,7 +665,7 @@ def api_workout_detail(record_date):
             "type": w.workout_type,
             "duration_minutes": w.duration_minutes,
             "intensity": w.intensity,
-            "distance_km": w.distance_km,
+            "distance_miles": round(w.distance_km * 0.621371, 2) if w.distance_km else None,
             "calories": round(cal, 1),
             "calories_source": "device" if w.calories_reported else "estimated",
             "avg_heart_rate": w.avg_heart_rate,
@@ -692,12 +692,12 @@ def _record_to_dict(record: DailyRecord) -> dict:
             "active_energy": h.active_energy_burned,
             "resting_energy": h.resting_energy_burned,
             "flights_climbed": h.flights_climbed,
-            "distance_km": h.distance_walked_km,
+            "distance_miles": round(h.distance_walked_km * 0.621371, 2),
         }
     d["workouts"] = [{
         "type": w.workout_type, "duration": w.duration_minutes,
         "intensity": w.intensity, "source": w.source,
-        "calories": w.calories_reported, "distance_km": w.distance_km,
+        "calories": w.calories_reported, "distance_miles": round(w.distance_km * 0.621371, 2) if w.distance_km else None,
     } for w in record.workouts]
     d["heart_rate"] = [{
         "time": hr.time, "bpm": hr.heart_rate_bpm,
@@ -723,7 +723,7 @@ def _clean_shortcut_json(raw: str) -> str:
     )
 
     # Replace any non-numeric value for numeric fields with 0
-    numeric_fields = "steps|sleep_hours|active_energy|resting_energy|distance_km|flights_climbed"
+    numeric_fields = "steps|sleep_hours|active_energy|resting_energy|distance_km|distance|distance_miles|flights_climbed"
     pattern = r'"(' + numeric_fields + r')"\s*:\s*(?!"|\[|\{)([^,\}]*[^0-9.\-,\}][^,\}]*)'
     raw = re.sub(pattern, r'"\1": 0', raw)
 

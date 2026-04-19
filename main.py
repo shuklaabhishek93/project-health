@@ -108,9 +108,9 @@ def log_workout(today: str) -> Workout:
 
     # Optional fields based on workout type
     if workout_type in ("running", "cycling", "swimming", "walking", "rowing"):
-        dist = get_input("Distance in km (0 to skip)", float, 0.0)
+        dist = get_input("Distance in miles (0 to skip)", float, 0.0)
         if dist > 0:
-            workout.distance_km = dist
+            workout.distance_km = dist * 1.60934
 
     if workout_type in ("weightlifting",):
         workout.sets = get_input("Number of sets", int, 0)
