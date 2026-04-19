@@ -255,8 +255,6 @@ def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
         flights_climbed=_safe_int(
             _first_of(data, "flights_climbed", "flights_climed", "flights", "floor_count")
         ),
-        water_intake_liters=_safe_float(_first_of(data, "water_ml", "water")) / 1000.0
-        if _first_of(data, "water_ml", "water") else 0.0,
     )
 
     # Parse workouts

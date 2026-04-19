@@ -182,7 +182,6 @@ def generate_test_curl_command(server_port: int = 8090, base_url: str | None = N
         f'    "resting_energy": 1700,\n'
         f'    "distance_km": 8.2,\n'
         f'    "flights_climbed": 12,\n'
-        f'    "water_ml": 2500,\n'
         f'    "heart_rate_readings": [\n'
         f'      {{"time": "07:00", "bpm": 62, "context": "morning"}},\n'
         f'      {{"time": "12:00", "bpm": 78, "context": "resting"}},\n'

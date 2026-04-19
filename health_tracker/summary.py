@@ -41,10 +41,6 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
         habits = record.health_habits
         recommendations = get_age_based_recommendations(profile)
 
-        water_target = recommendations["water_liters"]
-        water_status = "OK" if habits.water_intake_liters >= water_target else "LOW"
-        lines.append(f"  Water Intake:     {habits.water_intake_liters}L / {water_target}L target [{water_status}]")
-
         sleep_target = recommendations["sleep_hours"]
         lines.append(f"  Sleep:            {habits.sleep_hours} hrs (recommended: {sleep_target} hrs)")
 
@@ -202,11 +198,6 @@ def calculate_health_score(profile: UserProfile, record: DailyRecord) -> int:
 
     if record.health_habits:
         habits = record.health_habits
-
-        # Water (15 points)
-        water_target = recommendations["water_liters"]
-        water_ratio = min(habits.water_intake_liters / water_target, 1.0)
-        score += int(water_ratio * 15)
 
         # Sleep (20 points)
         sleep_range = recommendations["sleep_hours"]

@@ -75,7 +75,6 @@ def log_health_habits(today: str) -> HealthHabit:
 
     return HealthHabit(
         date=today,
-        water_intake_liters=get_input("Water intake (liters)", float, 0.0),
         sleep_hours=get_input("Sleep last night (hours)", float, 0.0),
         steps=get_input("Steps today", int, 0),
         fruits_vegetables_servings=get_input("Fruit/vegetable servings", int, 0),
@@ -578,7 +577,6 @@ def main_menu():
             print(f"  Weekly Exercise: {recommendations['exercise_minutes_per_week']} min")
             print(f"  Recommended Workouts: {', '.join(recommendations['recommended_workouts'])}")
             print(f"  Sleep: {recommendations['sleep_hours']} hours")
-            print(f"  Water: {recommendations['water_liters']}L/day")
             print(f"  Focus Areas:")
             for area in recommendations["focus_areas"]:
                 print(f"    - {area}")

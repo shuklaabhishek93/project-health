@@ -459,28 +459,6 @@ async function loadAnalytics() {
     },
   });
 
-  // --- Water Chart ---
-  destroyChart('water');
-  charts.water = new Chart(document.getElementById('chartWater'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Water',
-        data: d.days.map(r => r.has_data ? r.water_liters : 0),
-        backgroundColor: d.days.map(r => {
-          if (!r.has_data || r.water_liters === 0) return 'rgba(108,117,125,0.3)';
-          if (r.water_liters >= 2.5) return C.info;
-          if (r.water_liters >= 2.0) return C.warning;
-          return C.danger;
-        }),
-      }],
-    },
-    options: { ...chartOpts('Water', 'Liters'),
-      scales: { ...chartOpts('','Liters').scales, y: { ...chartOpts('','Liters').scales.y, min: 0 } },
-    },
-  });
-
   // --- Workout Types Pie ---
   const typeCounts = {};
   dataDays.forEach(r => {
@@ -525,10 +503,6 @@ async function loadAnalytics() {
         <div class="col-md-3">
           <strong class="small">Sleep Target</strong>
           <div>${rec.sleep_hours} hours</div>
-        </div>
-        <div class="col-md-3">
-          <strong class="small">Water Target</strong>
-          <div>${rec.water_liters}L / day</div>
         </div>
         <div class="col-md-3">
           <strong class="small">Recommended Workouts</strong>

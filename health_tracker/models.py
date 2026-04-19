@@ -50,7 +50,6 @@ class UserProfile:
 @dataclass
 class HealthHabit:
     date: str
-    water_intake_liters: float = 0.0
     sleep_hours: float = 0.0
     steps: int = 0
     fruits_vegetables_servings: int = 0

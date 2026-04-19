@@ -11,7 +11,7 @@ def merge_daily_records(existing: DailyRecord, imported: DailyRecord) -> DailyRe
     Merge an imported DailyRecord into an existing one.
 
     - Health habits: Merges device-reported fields (steps, energy, distance) without
-      overwriting manually-entered fields (water, diet, meditation, etc.)
+      overwriting manually-entered fields (diet, meditation, etc.)
     - Workouts: Adds imported workouts, skipping duplicates by external_id
     - Heart rate: Adds imported readings, skipping duplicates by external_id
     """
@@ -36,8 +36,6 @@ def merge_daily_records(existing: DailyRecord, imported: DailyRecord) -> DailyRe
             h.flights_climbed = max(h.flights_climbed, imp.flights_climbed)
         if imp.distance_walked_km > 0:
             h.distance_walked_km = max(h.distance_walked_km, imp.distance_walked_km)
-        if imp.water_intake_liters > 0 and h.water_intake_liters == 0:
-            h.water_intake_liters = imp.water_intake_liters
 
     # Merge workouts (skip duplicates by external_id)
     existing_workout_ids = {w.external_id for w in existing.workouts if w.external_id}

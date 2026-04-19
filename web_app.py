@@ -546,12 +546,10 @@ def api_analytics_range():
         step_cal = 0.0
         steps = 0
         sleep = 0.0
-        water = 0.0
         active_energy = 0.0
         if record.health_habits:
             steps = record.health_habits.steps
             sleep = record.health_habits.sleep_hours
-            water = record.health_habits.water_intake_liters
             active_energy = record.health_habits.active_energy_burned
             step_cal = calculate_steps_calories(profile, steps)
 
@@ -574,7 +572,6 @@ def api_analytics_range():
             "score": score,
             "steps": steps,
             "sleep_hours": sleep,
-            "water_liters": water,
             "workout_minutes": total_workout_min,
             "workout_calories": round(workout_calories, 1),
             "workout_types": workout_types,
@@ -684,7 +681,6 @@ def _record_to_dict(record: DailyRecord) -> dict:
     if record.health_habits:
         h = record.health_habits
         d["health_habits"] = {
-            "water_liters": h.water_intake_liters,
             "sleep_hours": h.sleep_hours,
             "steps": h.steps,
             "fruits_vegs": h.fruits_vegetables_servings,

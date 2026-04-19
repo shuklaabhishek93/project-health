@@ -82,7 +82,6 @@ def _record_to_json(record: DailyRecord) -> dict:
     if record.health_habits:
         data["health_habits"] = {
             "date": record.health_habits.date,
-            "water_intake_liters": record.health_habits.water_intake_liters,
             "sleep_hours": record.health_habits.sleep_hours,
             "steps": record.health_habits.steps,
             "fruits_vegetables_servings": record.health_habits.fruits_vegetables_servings,
@@ -134,7 +133,6 @@ def _json_to_record(data: dict) -> DailyRecord:
         h = data["health_habits"]
         record.health_habits = HealthHabit(
             date=h["date"],
-            water_intake_liters=h.get("water_intake_liters", 0.0),
             sleep_hours=h.get("sleep_hours", 0.0),
             steps=h.get("steps", 0),
             fruits_vegetables_servings=h.get("fruits_vegetables_servings", 0),
