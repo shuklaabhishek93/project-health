@@ -191,8 +191,19 @@ def _calc_sleep_hours(sleep_start, sleep_end) -> float:
                 start = datetime.strptime(start_str, fmt)
                 end = datetime.strptime(end_str, fmt)
                 diff = (end - start).total_seconds() / 3600.0
-                if 0 < diff < 24:
+                if 0 < diff <= 16:
                     return round(diff, 2)
+                if diff > 16:
+                    # Filter captured two nights; estimate last night only.
+                    # Use sleep_end time as wake-up and assume ~sleep_end.hour + 6
+                    # hours of sleep (e.g., woke at 6 AM → slept ~6h from midnight).
+                    adjusted = diff % 24
+                    if 2 < adjusted <= 16:
+                        return round(adjusted, 2)
+                    # Fallback: use wake-up hour as rough estimate
+                    wake_hour = end.hour + end.minute / 60.0
+                    if 0 < wake_hour <= 14:
+                        return round(wake_hour, 2)
                 return 0.0
             except ValueError:
                 continue
