@@ -47,6 +47,8 @@ STRAVA_SPORT_MAP = {
     "Hike": "walking",
     "Yoga": "yoga",
     "Weight Training": "weightlifting",
+    "WeightTraining": "weightlifting",
+    "Strength Training": "weightlifting",
     "Workout": "hiit",
     "HIIT": "hiit",
     "CrossFit": "hiit",
@@ -373,7 +375,27 @@ def import_strava(
 
         # Map activity type
         sport_type = activity.get("sport_type", activity.get("type", "Workout"))
-        mapped_type = STRAVA_SPORT_MAP.get(sport_type, "other")
+        mapped_type = STRAVA_SPORT_MAP.get(sport_type)
+        if not mapped_type:
+            # Case-insensitive fallback
+            sport_lower = sport_type.lower()
+            for k, v in STRAVA_SPORT_MAP.items():
+                if k.lower() == sport_lower:
+                    mapped_type = v
+                    break
+            if not mapped_type:
+                if "strength" in sport_lower or "weight" in sport_lower:
+                    mapped_type = "weightlifting"
+                elif "run" in sport_lower:
+                    mapped_type = "running"
+                elif "ride" in sport_lower or "cycl" in sport_lower:
+                    mapped_type = "cycling"
+                elif "swim" in sport_lower:
+                    mapped_type = "swimming"
+                elif "walk" in sport_lower or "hike" in sport_lower:
+                    mapped_type = "walking"
+                else:
+                    mapped_type = "other"
 
         # Duration in minutes
         duration_seconds = activity.get("moving_time", activity.get("elapsed_time", 0))

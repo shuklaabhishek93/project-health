@@ -35,27 +35,50 @@ logger = logging.getLogger("auto_sync.apple_health_server")
 # Map iOS Shortcut workout type names to our types
 IOS_WORKOUT_TYPE_MAP = {
     "running": "running",
+    "run": "running",
+    "trail_run": "running",
     "cycling": "cycling",
+    "ride": "cycling",
+    "bike": "cycling",
     "swimming": "swimming",
+    "swim": "swimming",
     "walking": "walking",
+    "walk": "walking",
     "hiking": "walking",
+    "hike": "walking",
     "yoga": "yoga",
     "strength_training": "weightlifting",
+    "strength": "weightlifting",
+    "weight_training": "weightlifting",
+    "weights": "weightlifting",
+    "weightlifting": "weightlifting",
     "functional_strength": "weightlifting",
+    "functional_strength_training": "weightlifting",
     "traditional_strength": "weightlifting",
+    "traditional_strength_training": "weightlifting",
     "hiit": "hiit",
     "high_intensity_interval": "hiit",
+    "high_intensity_interval_training": "hiit",
     "dance": "dancing",
+    "dancing": "dancing",
     "jump_rope": "jump_rope",
     "rowing": "rowing",
+    "indoor_rowing": "rowing",
     "elliptical": "elliptical",
     "stair_climbing": "stair_climbing",
+    "stair_stepper": "stair_climbing",
+    "stairs": "stair_climbing",
     "boxing": "boxing",
+    "kickboxing": "boxing",
     "pilates": "pilates",
     "cooldown": "stretching",
+    "stretching": "stretching",
+    "flexibility": "stretching",
     "core_training": "weightlifting",
     "cross_training": "hiit",
     "mixed_cardio": "hiit",
+    "workout": "hiit",
+    "other": "other",
 }
 
 
@@ -168,6 +191,43 @@ def _first_of(data: dict, *keys) -> object:
     return None
 
 
+def _fuzzy_workout_type(raw: str) -> str:
+    """Fallback mapping when exact match fails."""
+    if "strength" in raw or "weight" in raw or "lift" in raw:
+        return "weightlifting"
+    if "run" in raw:
+        return "running"
+    if "cycl" in raw or "bike" in raw or "ride" in raw:
+        return "cycling"
+    if "swim" in raw:
+        return "swimming"
+    if "walk" in raw or "hike" in raw:
+        return "walking"
+    if "yoga" in raw:
+        return "yoga"
+    if "hiit" in raw or "interval" in raw or "circuit" in raw:
+        return "hiit"
+    if "box" in raw or "kick" in raw:
+        return "boxing"
+    if "row" in raw:
+        return "rowing"
+    if "dance" in raw:
+        return "dancing"
+    if "pilates" in raw:
+        return "pilates"
+    if "stretch" in raw or "cool" in raw or "flex" in raw:
+        return "stretching"
+    if "stair" in raw or "climb" in raw:
+        return "stair_climbing"
+    if "elliptical" in raw:
+        return "elliptical"
+    if "core" in raw:
+        return "weightlifting"
+    if "jump" in raw or "rope" in raw:
+        return "jump_rope"
+    return raw
+
+
 def _calc_sleep_hours(sleep_start, sleep_end) -> float:
     """Calculate sleep duration from start/end timestamps sent by iOS Shortcut."""
     if not sleep_start or not sleep_end:
@@ -260,7 +320,9 @@ def parse_ios_payload(data: dict, record_date: str) -> DailyRecord:
     # Parse workouts
     for w in data.get("workouts", []):
         workout_type = w.get("type", "other").lower().replace(" ", "_")
-        mapped_type = IOS_WORKOUT_TYPE_MAP.get(workout_type, workout_type)
+        mapped_type = IOS_WORKOUT_TYPE_MAP.get(workout_type)
+        if not mapped_type:
+            mapped_type = _fuzzy_workout_type(workout_type)
         start_time = w.get("start_time", "00:00")
         ext_id = f"apple_auto_{record_date}_{start_time}_{mapped_type}"
 
