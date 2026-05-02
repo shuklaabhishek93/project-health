@@ -194,10 +194,10 @@ def _calc_sleep_hours(sleep_start, sleep_end) -> float:
                 if 0 < diff <= 16:
                     return round(diff, 2)
                 if diff > 16:
-                    adjusted = (diff % 24) + 1
+                    adjusted = (diff % 24) + 1.5
                     if 2 < adjusted <= 16:
                         return round(adjusted, 2)
-                    wake_hour = end.hour + end.minute / 60.0 + 1
+                    wake_hour = end.hour + end.minute / 60.0 + 1.5
                     if 0 < wake_hour <= 14:
                         return round(wake_hour, 2)
                 return 0.0
