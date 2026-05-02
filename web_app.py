@@ -470,8 +470,12 @@ def api_flush_records():
 @app.route("/api/records/fix-workout-types", methods=["POST"])
 def api_fix_workout_types():
     """Re-map workout types in all existing records using the updated mapping."""
+    from health_tracker.integrations.strava import STRAVA_SPORT_MAP
+    # Allow override via query param, e.g. ?other_to=weightlifting
+    other_default = request.args.get("other_to", "weightlifting")
     dates = list_all_records()
     fixed_count = 0
+    details = []
     for d in dates:
         record = load_daily_record(d)
         if not record:
@@ -479,17 +483,32 @@ def api_fix_workout_types():
         changed = False
         for w in record.workouts:
             old_type = w.workout_type
-            normalized = old_type.lower().replace(" ", "_")
-            new_type = IOS_WORKOUT_TYPE_MAP.get(normalized)
-            if not new_type:
-                new_type = _fuzzy_workout_type(normalized)
+            new_type = old_type
+
+            if old_type == "other":
+                # Try to recover from external_id or notes
+                hint = (w.external_id or "") + " " + (w.notes or "")
+                hint_lower = hint.lower()
+                recovered = _fuzzy_workout_type(hint_lower)
+                if recovered != hint_lower and recovered != "other":
+                    new_type = recovered
+                else:
+                    new_type = other_default
+            else:
+                normalized = old_type.lower().replace(" ", "_")
+                mapped = IOS_WORKOUT_TYPE_MAP.get(normalized)
+                if not mapped:
+                    mapped = _fuzzy_workout_type(normalized)
+                new_type = mapped
+
             if new_type != old_type:
+                details.append({"date": d, "from": old_type, "to": new_type})
                 w.workout_type = new_type
                 changed = True
                 fixed_count += 1
         if changed:
             save_daily_record(record)
-    return jsonify({"status": "done", "workouts_fixed": fixed_count})
+    return jsonify({"status": "done", "workouts_fixed": fixed_count, "details": details})
 
 
 @app.route("/api/records/<record_date>", methods=["GET", "DELETE"])
