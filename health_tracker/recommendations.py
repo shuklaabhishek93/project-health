@@ -75,6 +75,9 @@ def generate_personalized_recommendations(
     total_flights = 0
     total_distance_km = 0.0
 
+    intensity_count: dict[str, int] = {}
+    workout_minutes_by_type: dict[str, int] = {}
+
     for r in days_with_data:
         if r.health_habits:
             avg_steps += r.health_habits.steps
@@ -87,6 +90,8 @@ def generate_personalized_recommendations(
             for w in r.workouts:
                 total_workout_min += w.duration_minutes
                 workout_types_count[w.workout_type] = workout_types_count.get(w.workout_type, 0) + 1
+                workout_minutes_by_type[w.workout_type] = workout_minutes_by_type.get(w.workout_type, 0) + w.duration_minutes
+                intensity_count[w.intensity] = intensity_count.get(w.intensity, 0) + 1
         for hr in r.heart_rate_readings:
             if hr.context == "resting":
                 avg_resting_hr += hr.heart_rate_bpm
@@ -157,15 +162,16 @@ def generate_personalized_recommendations(
         else:
             achievements.append(f"Meeting exercise goals: ~{weekly_workout_min} min/week (target: {weekly_exercise} min).")
 
-    # --- Workout Variety ---
+    # --- Workout Balance Analysis ---
     if workout_types_count:
-        top_type = max(workout_types_count, key=workout_types_count.get)
-        unique_types = len(workout_types_count)
-        if unique_types < 3 and workout_days >= 3:
-            missing = _suggest_missing_workouts(age, bmi, workout_types_count)
-            insights.append(f"You mostly do {top_type.replace('_', ' ')}. Try adding {', '.join(missing)} for a balanced routine — cross-training reduces overuse injuries and improves overall fitness.")
-        elif unique_types >= 3:
-            achievements.append(f"Good workout variety: {unique_types} different types ({', '.join(t.replace('_', ' ') for t in workout_types_count)}).")
+        balance = _analyze_workout_balance(
+            age, gender, bmi, weight_kg, workout_types_count,
+            total_workout_min, workout_days, num_days,
+            intensity_count, workout_minutes_by_type,
+        )
+        insights.extend(balance["insights"])
+        warnings.extend(balance["warnings"])
+        achievements.extend(balance["achievements"])
 
     # --- Heart Rate ---
     if avg_resting_hr > 0:
@@ -219,6 +225,195 @@ def generate_personalized_recommendations(
             "avg_active_energy": avg_active_energy,
         },
     }
+
+
+CARDIO_TYPES = {"running", "cycling", "swimming", "rowing", "elliptical", "jump_rope", "walking", "hiking", "stair_climbing", "dancing"}
+STRENGTH_TYPES = {"weightlifting"}
+FLEXIBILITY_TYPES = {"yoga", "pilates", "stretching"}
+HIIT_TYPES = {"hiit", "boxing", "cross_training"}
+
+
+def _analyze_workout_balance(
+    age: int, gender: str, bmi: float, weight_kg: float,
+    type_counts: dict[str, int],
+    total_min: int, workout_days: int, num_days: int,
+    intensity_counts: dict[str, int],
+    minutes_by_type: dict[str, int],
+) -> dict:
+    insights = []
+    warnings = []
+    achievements = []
+
+    total_sessions = sum(type_counts.values())
+    if total_sessions == 0:
+        return {"insights": insights, "warnings": warnings, "achievements": achievements}
+
+    # Categorize workouts
+    cardio_sessions = sum(type_counts.get(t, 0) for t in CARDIO_TYPES)
+    strength_sessions = sum(type_counts.get(t, 0) for t in STRENGTH_TYPES)
+    flexibility_sessions = sum(type_counts.get(t, 0) for t in FLEXIBILITY_TYPES)
+    hiit_sessions = sum(type_counts.get(t, 0) for t in HIIT_TYPES)
+
+    cardio_min = sum(minutes_by_type.get(t, 0) for t in CARDIO_TYPES)
+    strength_min = sum(minutes_by_type.get(t, 0) for t in STRENGTH_TYPES)
+    flexibility_min = sum(minutes_by_type.get(t, 0) for t in FLEXIBILITY_TYPES)
+
+    cardio_pct = round(cardio_sessions / total_sessions * 100)
+    strength_pct = round(strength_sessions / total_sessions * 100)
+
+    # --- Dominance detection ---
+    top_type = max(type_counts, key=type_counts.get)
+    top_count = type_counts[top_type]
+    top_pct = round(top_count / total_sessions * 100)
+    top_name = top_type.replace("_", " ")
+
+    if top_pct >= 70 and total_sessions >= 4:
+        pivot = _get_pivot_suggestion(top_type, age, bmi, weight_kg, gender)
+        warnings.append(
+            f"{top_pct}% of your workouts are {top_name} ({top_count}/{total_sessions} sessions). "
+            f"Over-reliance on one exercise increases overuse injury risk and limits overall fitness gains. "
+            f"Pivot suggestion: {pivot}"
+        )
+    elif top_pct >= 50 and total_sessions >= 4:
+        pivot = _get_pivot_suggestion(top_type, age, bmi, weight_kg, gender)
+        insights.append(
+            f"{top_name} dominates your routine ({top_pct}% of sessions). "
+            f"Consider balancing with: {pivot}"
+        )
+
+    # --- Category balance ---
+    # Ideal split: ~40-50% cardio, 25-30% strength, 15-20% flexibility, rest HIIT
+    if total_sessions >= 3:
+        if strength_sessions == 0:
+            if bmi >= 25:
+                warnings.append(
+                    f"No strength training detected. With a BMI of {bmi}, adding 2-3 weightlifting sessions/week "
+                    f"is critical — it boosts metabolism by building lean muscle, which burns ~50 extra cal/day per "
+                    f"kg of muscle gained. This accelerates fat loss more effectively than cardio alone."
+                )
+            else:
+                insights.append(
+                    "No strength training in your routine. Adults lose 3-5% muscle mass per decade after 30. "
+                    "Add 2 sessions/week to maintain bone density, posture, and metabolic rate."
+                )
+
+        if cardio_sessions == 0:
+            warnings.append(
+                "No cardio workouts detected. The AHA recommends 150 min/week of moderate cardio for heart health. "
+                f"{'Start with walking or swimming (low-impact for your joints).' if bmi >= 30 else 'Try running, cycling, or swimming.'}"
+            )
+
+        if flexibility_sessions == 0 and total_sessions >= 5:
+            insights.append(
+                "No flexibility/mobility work. Add 1-2 yoga or stretching sessions per week — "
+                "it reduces injury risk, improves range of motion, and speeds recovery between intense workouts."
+            )
+
+        if cardio_pct > 70 and strength_pct == 0:
+            insights.append(
+                f"Your routine is {cardio_pct}% cardio with no strength training. "
+                f"This can lead to muscle loss over time. A balanced approach "
+                f"(60% cardio / 30% strength / 10% flexibility) is optimal for "
+                f"{'weight management' if bmi >= 25 else 'overall fitness'}."
+            )
+
+    # --- Intensity balance ---
+    total_intensity = sum(intensity_counts.values())
+    if total_intensity >= 3:
+        vigorous = intensity_counts.get("vigorous", 0)
+        light = intensity_counts.get("light", 0)
+        vigorous_pct = round(vigorous / total_intensity * 100)
+        light_pct = round(light / total_intensity * 100)
+
+        if vigorous_pct > 60:
+            warnings.append(
+                f"{vigorous_pct}% of your workouts are vigorous intensity. "
+                f"Too much high-intensity training without recovery increases cortisol and injury risk. "
+                f"Follow the 80/20 rule: 80% low-moderate, 20% high intensity."
+            )
+        elif light_pct > 80:
+            insights.append(
+                f"{light_pct}% of your workouts are light intensity. "
+                f"Add 1-2 moderate or vigorous sessions/week to improve cardiovascular fitness and calorie burn."
+            )
+
+    # --- BMI-specific workout suggestions ---
+    if bmi >= 30 and total_sessions >= 2:
+        has_hiit = hiit_sessions > 0 or any(t in type_counts for t in HIIT_TYPES)
+        if not has_hiit and strength_sessions == 0:
+            insights.append(
+                f"For your BMI ({bmi}), the most effective routine combines: "
+                f"walking/swimming (3x/week for cardiovascular base), "
+                f"weightlifting (2x/week to boost resting metabolism), and "
+                f"one moderate HIIT session for calorie afterburn. "
+                f"This burns more fat long-term than cardio alone."
+            )
+    elif bmi < 18.5 and total_sessions >= 2:
+        if cardio_pct > 50 and strength_sessions == 0:
+            warnings.append(
+                f"With a BMI of {bmi} (underweight), heavy cardio without strength training "
+                f"can lead to further weight loss. Prioritize weightlifting and reduce long cardio sessions. "
+                f"Focus on compound lifts (squats, deadlifts, bench press) with progressive overload."
+            )
+
+    # --- Good balance achievement ---
+    if total_sessions >= 4:
+        unique = len(type_counts)
+        has_all_three = cardio_sessions > 0 and strength_sessions > 0 and flexibility_sessions > 0
+        if has_all_three:
+            achievements.append(
+                f"Well-balanced routine with cardio ({cardio_sessions}x), strength ({strength_sessions}x), "
+                f"and flexibility ({flexibility_sessions}x) — this covers all fitness pillars."
+            )
+        elif unique >= 3 and top_pct < 50:
+            achievements.append(
+                f"Good workout variety: {unique} different types across {total_sessions} sessions."
+            )
+
+    return {"insights": insights, "warnings": warnings, "achievements": achievements}
+
+
+def _get_pivot_suggestion(dominant_type: str, age: int, bmi: float, weight_kg: float, gender: str) -> str:
+    dominant = dominant_type.lower()
+    name = dominant.replace("_", " ")
+
+    if dominant in CARDIO_TYPES:
+        if bmi >= 25:
+            return (
+                f"Replace 2 {name} sessions/week with weightlifting. "
+                f"Strength training raises your resting metabolic rate — "
+                f"at {weight_kg} kg, adding 2 kg of muscle would burn ~100 extra cal/day at rest."
+            )
+        return (
+            f"Swap 1-2 {name} sessions for weightlifting or yoga. "
+            f"Cross-training prevents overuse injuries common with repetitive {name}."
+        )
+
+    if dominant in STRENGTH_TYPES:
+        if age > 40:
+            return (
+                "Add 2-3 cardio sessions (cycling or swimming) for heart health, "
+                "plus 1 yoga/stretching session for joint mobility and recovery."
+            )
+        return (
+            "Add 2 cardio sessions (running or cycling) to improve cardiovascular endurance, "
+            "and 1 flexibility session to maintain range of motion."
+        )
+
+    if dominant in HIIT_TYPES:
+        return (
+            "HIIT is great but hard on the body. Limit to 2-3x/week max. "
+            "Add steady-state cardio (walking, cycling) for active recovery days "
+            "and strength training for balanced muscle development."
+        )
+
+    if dominant in FLEXIBILITY_TYPES:
+        return (
+            f"{'Yoga and stretching' if dominant == 'yoga' else name.title()} builds flexibility but not strength or cardio fitness. "
+            f"Add 2 strength sessions and 2 cardio sessions per week for complete fitness."
+        )
+
+    return "Try mixing in cardio, strength, and flexibility work for a balanced routine."
 
 
 def _daily_calorie_burn_target(age: int, gender: str, weight_kg: float, bmi: float) -> int:
