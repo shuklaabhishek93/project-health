@@ -14,6 +14,7 @@ from health_tracker.calculator import (
     calculate_calories_burned, calculate_bmr, calculate_steps_calories,
     analyze_heart_rate, get_age_based_recommendations,
 )
+from health_tracker.recommendations import generate_personalized_recommendations
 from health_tracker.storage import (
     save_profile, load_profile, save_daily_record, load_daily_record,
     load_daily_records_batch, list_all_records, ensure_data_dir, DATA_DIR,
@@ -599,7 +600,8 @@ def api_analytics_range():
         "total_calories_burned": round(sum(r["total_calories"] for r in data_days), 1),
     }
 
-    recs = get_age_based_recommendations(profile)
+    all_records = [records_map[d] for d in date_list if records_map.get(d)]
+    personalized = generate_personalized_recommendations(profile, all_records)
 
     return jsonify({
         "profile": {
@@ -608,7 +610,7 @@ def api_analytics_range():
             "bmi": profile.bmi,
             "max_heart_rate": profile.max_heart_rate,
         },
-        "recommendations": recs,
+        "recommendations": personalized,
         "days": results,
         "totals": totals,
     })
