@@ -34,7 +34,9 @@ from health_tracker.integrations.strava import (
     load_strava_token, import_strava, save_strava_token,
     STRAVA_AUTH_URL, STRAVA_TOKEN_URL,
 )
-from health_tracker.integrations.apple_health_server import parse_ios_payload
+from health_tracker.integrations.apple_health_server import (
+    parse_ios_payload, IOS_WORKOUT_TYPE_MAP, _fuzzy_workout_type,
+)
 
 app = Flask(__name__)
 ensure_data_dir()
@@ -463,6 +465,31 @@ def api_flush_records():
             if os.path.exists(path):
                 os.unlink(path)
     return jsonify({"status": "flushed", "records_deleted": len(dates)})
+
+
+@app.route("/api/records/fix-workout-types", methods=["POST"])
+def api_fix_workout_types():
+    """Re-map workout types in all existing records using the updated mapping."""
+    dates = list_all_records()
+    fixed_count = 0
+    for d in dates:
+        record = load_daily_record(d)
+        if not record:
+            continue
+        changed = False
+        for w in record.workouts:
+            old_type = w.workout_type
+            normalized = old_type.lower().replace(" ", "_")
+            new_type = IOS_WORKOUT_TYPE_MAP.get(normalized)
+            if not new_type:
+                new_type = _fuzzy_workout_type(normalized)
+            if new_type != old_type:
+                w.workout_type = new_type
+                changed = True
+                fixed_count += 1
+        if changed:
+            save_daily_record(record)
+    return jsonify({"status": "done", "workouts_fixed": fixed_count})
 
 
 @app.route("/api/records/<record_date>", methods=["GET", "DELETE"])
