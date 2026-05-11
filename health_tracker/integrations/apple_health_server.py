@@ -231,10 +231,14 @@ def _fuzzy_workout_type(raw: str) -> str:
 def _calc_sleep_hours(sleep_start, sleep_end) -> float:
     """Calculate sleep duration from start/end timestamps sent by iOS Shortcut."""
     if not sleep_start or not sleep_end:
+        logger.info(f"Sleep calc: missing data — start={sleep_start!r}, end={sleep_end!r}")
         return 0.0
     try:
         start_str = str(sleep_start).strip()
         end_str = str(sleep_end).strip()
+        if not start_str or not end_str:
+            logger.info(f"Sleep calc: empty strings — start={start_str!r}, end={end_str!r}")
+            return 0.0
         formats = [
             "%Y-%m-%d %H:%M",
             "%Y-%m-%d %H:%M:%S",
@@ -251,6 +255,7 @@ def _calc_sleep_hours(sleep_start, sleep_end) -> float:
                 start = datetime.strptime(start_str, fmt)
                 end = datetime.strptime(end_str, fmt)
                 diff = (end - start).total_seconds() / 3600.0
+                logger.info(f"Sleep calc: start={start_str}, end={end_str}, diff={diff:.2f}h")
                 if 0 < diff <= 16:
                     return round(diff, 2)
                 if diff > 16:
@@ -260,11 +265,13 @@ def _calc_sleep_hours(sleep_start, sleep_end) -> float:
                     wake_hour = end.hour + end.minute / 60.0 + 1.5
                     if 0 < wake_hour <= 14:
                         return round(wake_hour, 2)
+                logger.info(f"Sleep calc: diff={diff:.2f}h out of range, returning 0")
                 return 0.0
             except ValueError:
                 continue
-    except Exception:
-        pass
+        logger.info(f"Sleep calc: no format matched — start={start_str!r}, end={end_str!r}")
+    except Exception as e:
+        logger.error(f"Sleep calc error: {e}")
     return 0.0
 
 

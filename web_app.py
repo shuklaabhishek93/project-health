@@ -511,6 +511,31 @@ def api_fix_workout_types():
     return jsonify({"status": "done", "workouts_fixed": fixed_count, "details": details})
 
 
+@app.route("/api/debug/sleep", methods=["GET"])
+def api_debug_sleep():
+    """Show sleep data for recent records to debug missing sleep hours."""
+    dates = request.args.get("dates", "").split(",") if request.args.get("dates") else list_all_records()[-14:]
+    result = []
+    for d in dates:
+        d = d.strip()
+        if not d:
+            continue
+        record = load_daily_record(d)
+        if not record:
+            result.append({"date": d, "has_record": False})
+            continue
+        h = record.health_habits
+        result.append({
+            "date": d,
+            "has_record": True,
+            "sleep_hours": h.sleep_hours if h else 0,
+            "steps": h.steps if h else 0,
+            "active_energy": h.active_energy_burned if h else 0,
+            "has_workouts": len(record.workouts),
+        })
+    return jsonify({"records": result})
+
+
 @app.route("/api/records/<record_date>", methods=["GET", "DELETE"])
 def api_get_record(record_date):
     if request.method == "DELETE":
