@@ -115,7 +115,9 @@ class HealthDataHandler(BaseHTTPRequestHandler):
 
             record_date = data.get("date")
             if not record_date:
-                record_date = datetime.now().strftime("%Y-%m-%d")
+                from datetime import timedelta, timezone
+                MT = timezone(timedelta(hours=-6))
+                record_date = datetime.now(MT).strftime("%Y-%m-%d")
             if "T" in record_date:
                 record_date = record_date.split("T")[0]
 

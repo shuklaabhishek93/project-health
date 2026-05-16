@@ -3,9 +3,30 @@
 import json
 import os
 import threading
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone, tzinfo
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for
+
+
+# Mountain Time: UTC-7 (MDT) / UTC-6 (MST)
+# Use a fixed offset; adjust if needed for daylight saving
+class _MountainTime(tzinfo):
+    def utcoffset(self, dt):
+        return timedelta(hours=-6)
+    def tzname(self, dt):
+        return "MDT"
+    def dst(self, dt):
+        return timedelta(0)
+
+MT = _MountainTime()
+
+
+def _today_mt() -> date:
+    return datetime.now(MT).date()
+
+
+def _now_mt() -> datetime:
+    return datetime.now(MT)
 
 from health_tracker.models import (
     UserProfile, HealthHabit, Workout, HeartRateEntry, DailyRecord,
@@ -62,7 +83,7 @@ def _get_base_url() -> str:
 @app.route("/")
 def index():
     profile = load_profile()
-    return render_template("index.html", profile=profile, today=date.today().isoformat())
+    return render_template("index.html", profile=profile, today=_today_mt().isoformat())
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +284,7 @@ def strava_callback():
     error = request.args.get("error")
     if error or not code:
         return render_template("index.html", profile=load_profile(),
-                               today=date.today().isoformat(),
+                               today=_today_mt().isoformat(),
                                strava_error=error or "No code received"), 400
 
     creds = _load_pending_strava_creds()
@@ -335,7 +356,7 @@ def api_strava_sync():
         return jsonify({"error": "Strava not connected"}), 400
 
     days = request.json.get("days", 7) if request.json else 7
-    start = (date.today() - timedelta(days=days)).isoformat()
+    start = (_today_mt() - timedelta(days=days)).isoformat()
 
     imported = import_strava(
         token_data["access_token"],
@@ -345,7 +366,7 @@ def api_strava_sync():
     if imported:
         updated, created = sync_imported_records(imported)
         config = load_config()
-        config["last_strava_sync"] = date.today().isoformat()
+        config["last_strava_sync"] = _today_mt().isoformat()
         save_config(config)
         return jsonify({"status": "ok", "days_updated": updated, "days_created": created})
     return jsonify({"status": "ok", "days_updated": 0, "days_created": 0})
@@ -407,7 +428,7 @@ def api_health_sync():
                     "received_preview": raw[:500],
                 }), 400
 
-        record_date = data.get("date") or dt.now().strftime("%Y-%m-%d")
+        record_date = data.get("date") or _now_mt().strftime("%Y-%m-%d")
         # Normalize date — iOS Shortcuts may send full ISO datetime
         if "T" in record_date:
             record_date = record_date.split("T")[0]
@@ -587,7 +608,7 @@ def api_analytics_range():
         return jsonify({"error": "No profile"}), 400
 
     days = request.args.get("days", 7, type=int)
-    end = date.today()
+    end = _today_mt()
     start = end - timedelta(days=days - 1)
 
     date_list = [(start + timedelta(days=i)).isoformat() for i in range(days)]
