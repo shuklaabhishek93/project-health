@@ -557,6 +557,29 @@ def api_debug_sleep():
     return jsonify({"records": result})
 
 
+@app.route("/api/data/export", methods=["GET"])
+def api_data_export():
+    """Export all data from the database for migration."""
+    from health_tracker.db_storage import is_db_enabled, db_export_all
+    if not is_db_enabled():
+        return jsonify({"error": "Database not configured"}), 400
+    data = db_export_all()
+    return jsonify({"record_count": len(data), "data": data})
+
+
+@app.route("/api/data/import", methods=["POST"])
+def api_data_import():
+    """Import data into the database (for migration to new provider)."""
+    from health_tracker.db_storage import is_db_enabled, db_import_all
+    if not is_db_enabled():
+        return jsonify({"error": "Database not configured"}), 400
+    payload = request.get_json()
+    if not payload or "data" not in payload:
+        return jsonify({"error": "JSON body must contain 'data' dict"}), 400
+    db_import_all(payload["data"])
+    return jsonify({"status": "imported", "record_count": len(payload["data"])})
+
+
 @app.route("/api/records/<record_date>", methods=["GET", "DELETE"])
 def api_get_record(record_date):
     if request.method == "DELETE":
