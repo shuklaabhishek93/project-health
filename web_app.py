@@ -82,8 +82,27 @@ def _get_base_url() -> str:
 
 @app.route("/")
 def index():
-    profile = load_profile()
+    try:
+        profile = load_profile()
+    except Exception as e:
+        from health_tracker.db_storage import db_status
+        status = db_status()
+        return (
+            f"<h1>Database Connection Error</h1>"
+            f"<p><b>Error:</b> {e}</p>"
+            f"<p><b>Host:</b> {status.get('host', 'N/A')}</p>"
+            f"<p><b>Database:</b> {status.get('database', 'N/A')}</p>"
+            f"<p><b>SSL in URL:</b> {status.get('ssl_in_url', 'N/A')}</p>"
+            f"<p>Check your DATABASE_URL environment variable in Render dashboard.</p>"
+            f"<p><a href='/api/db-status'>Full DB Status</a></p>"
+        ), 500
     return render_template("index.html", profile=profile, today=_today_mt().isoformat())
+
+
+@app.route("/api/db-status")
+def api_db_status():
+    from health_tracker.db_storage import db_status
+    return jsonify(db_status())
 
 
 # ---------------------------------------------------------------------------
