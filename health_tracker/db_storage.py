@@ -17,6 +17,7 @@ logger = logging.getLogger("db_storage")
 
 _conn = None
 _conn_ok = False
+_last_error = None
 
 
 def _prepare_url(url: str) -> str:
@@ -59,7 +60,12 @@ def _get_conn():
 
     import psycopg2
     url = _prepare_url(os.environ.get("DATABASE_URL", ""))
-    _conn = psycopg2.connect(url)
+    try:
+        _conn = psycopg2.connect(url, connect_timeout=10)
+    except Exception as e:
+        _last_error = str(e)
+        logger.error(f"Database connection failed: {e}")
+        raise
     _conn.autocommit = True
     with _conn.cursor() as cur:
         cur.execute("""
@@ -69,6 +75,7 @@ def _get_conn():
             )
         """)
     _conn_ok = True
+    _last_error = None
     logger.info("Database connected")
     return _conn
 
@@ -90,6 +97,34 @@ def _safe_execute(fn):
 def is_db_enabled() -> bool:
     """Check whether database storage is configured."""
     return bool(os.environ.get("DATABASE_URL"))
+
+
+def db_status() -> dict:
+    """Return diagnostic info about the database connection."""
+    url = os.environ.get("DATABASE_URL", "")
+    info = {
+        "configured": bool(url),
+        "connected": _conn is not None and _conn_ok,
+        "last_error": _last_error,
+    }
+    if url:
+        # Show host only (mask credentials)
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(url if "://" in url else "postgresql://" + url)
+            info["host"] = parsed.hostname
+            info["database"] = parsed.path.lstrip("/") if parsed.path else None
+            info["ssl_in_url"] = "sslmode" in url
+        except Exception:
+            info["host"] = "parse_error"
+    if not info["connected"] and url:
+        try:
+            _get_conn()
+            info["connected"] = True
+            info["last_error"] = None
+        except Exception as e:
+            info["last_error"] = str(e)
+    return info
 
 
 def db_put(key: str, value: dict):
