@@ -101,7 +101,6 @@ def import_apple_health(
         "resting_energy": 0.0,
         "walking_distance_km": 0.0,
         "flights_climbed": 0,
-        "water_liters": 0.0,
         "workouts": [],
     })
 
@@ -169,13 +168,6 @@ def import_apple_health(
             elif record_type == FLIGHTS_CLIMBED:
                 try:
                     day["flights_climbed"] += int(float(value))
-                except ValueError:
-                    pass
-
-            elif record_type == WATER:
-                try:
-                    # Apple Health stores water in mL
-                    day["water_liters"] += float(value) / 1000.0
                 except ValueError:
                     pass
 
@@ -308,7 +300,6 @@ def import_apple_health(
         sleep_hours = round(day["sleep_minutes"] / 60, 1)
         record.health_habits = HealthHabit(
             date=record_date,
-            water_intake_liters=round(day["water_liters"], 2),
             sleep_hours=sleep_hours,
             steps=day["steps"],
             active_energy_burned=round(day["active_energy"], 1),

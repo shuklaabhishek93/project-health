@@ -41,10 +41,6 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
         habits = record.health_habits
         recommendations = get_age_based_recommendations(profile)
 
-        water_target = recommendations["water_liters"]
-        water_status = "OK" if habits.water_intake_liters >= water_target else "LOW"
-        lines.append(f"  Water Intake:     {habits.water_intake_liters}L / {water_target}L target [{water_status}]")
-
         sleep_target = recommendations["sleep_hours"]
         lines.append(f"  Sleep:            {habits.sleep_hours} hrs (recommended: {sleep_target} hrs)")
 
@@ -53,7 +49,7 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
         lines.append(f"  Calories (steps): {step_calories} cal")
 
         if habits.distance_walked_km > 0:
-            lines.append(f"  Walk/Run Dist:    {habits.distance_walked_km} km")
+            lines.append(f"  Walk/Run Dist:    {round(habits.distance_walked_km * 0.621371, 2)} mi")
         if habits.flights_climbed > 0:
             lines.append(f"  Flights Climbed:  {habits.flights_climbed}")
 
@@ -101,7 +97,7 @@ def generate_daily_summary(profile: UserProfile, record: DailyRecord) -> str:
             lines.append(f"    Duration:    {workout.duration_minutes} min")
             lines.append(f"    Intensity:   {workout.intensity.title()}")
             if workout.distance_km:
-                lines.append(f"    Distance:    {workout.distance_km} km")
+                lines.append(f"    Distance:    {round(workout.distance_km * 0.621371, 2)} mi")
             if workout.sets and workout.reps:
                 lines.append(f"    Sets/Reps:   {workout.sets} x {workout.reps}")
             if workout.weight_lifted_kg:
@@ -202,11 +198,6 @@ def calculate_health_score(profile: UserProfile, record: DailyRecord) -> int:
 
     if record.health_habits:
         habits = record.health_habits
-
-        # Water (15 points)
-        water_target = recommendations["water_liters"]
-        water_ratio = min(habits.water_intake_liters / water_target, 1.0)
-        score += int(water_ratio * 15)
 
         # Sleep (20 points)
         sleep_range = recommendations["sleep_hours"]

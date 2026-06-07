@@ -122,7 +122,6 @@ def get_age_based_recommendations(profile: UserProfile) -> dict:
             "exercise_minutes_per_week": 150,
             "recommended_workouts": ["running", "swimming", "hiit", "weightlifting", "sports"],
             "sleep_hours": "7-9",
-            "water_liters": 2.5,
             "focus_areas": [
                 "Build cardiovascular endurance",
                 "Develop strength foundation",
@@ -135,7 +134,6 @@ def get_age_based_recommendations(profile: UserProfile) -> dict:
             "exercise_minutes_per_week": 150,
             "recommended_workouts": ["running", "cycling", "weightlifting", "hiit", "yoga"],
             "sleep_hours": "7-9",
-            "water_liters": 2.5,
             "focus_areas": [
                 "Maintain muscle mass",
                 "Prioritize recovery",
@@ -148,7 +146,6 @@ def get_age_based_recommendations(profile: UserProfile) -> dict:
             "exercise_minutes_per_week": 150,
             "recommended_workouts": ["cycling", "swimming", "weightlifting", "yoga", "walking"],
             "sleep_hours": "7-8",
-            "water_liters": 2.5,
             "focus_areas": [
                 "Joint health and mobility",
                 "Maintain bone density with weight-bearing exercise",
@@ -161,7 +158,6 @@ def get_age_based_recommendations(profile: UserProfile) -> dict:
             "exercise_minutes_per_week": 150,
             "recommended_workouts": ["walking", "cycling", "swimming", "yoga", "pilates"],
             "sleep_hours": "7-8",
-            "water_liters": 2.0,
             "focus_areas": [
                 "Cardiovascular health",
                 "Balance and stability",
@@ -174,7 +170,6 @@ def get_age_based_recommendations(profile: UserProfile) -> dict:
             "exercise_minutes_per_week": 150,
             "recommended_workouts": ["walking", "swimming", "yoga", "stretching", "pilates"],
             "sleep_hours": "7-8",
-            "water_liters": 2.0,
             "focus_areas": [
                 "Fall prevention through balance training",
                 "Maintain independence and mobility",

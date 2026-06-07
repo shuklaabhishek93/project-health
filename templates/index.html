@@ -232,9 +232,33 @@
         <span id="stravaBadge" class="badge ms-auto">Checking...</span>
       </div>
       <div class="card-body">
-        <p class="small text-muted mb-2" id="stravaInfo">
-          Strava is connected via OAuth2. The scheduler will automatically fetch your activities daily.
-        </p>
+        <p class="small text-muted mb-2" id="stravaInfo">Checking...</p>
+
+        <!-- Connect form (shown when not connected) -->
+        <div id="stravaConnectForm" style="display:none;" class="mb-3">
+          <p class="small mb-2">
+            Get your credentials at
+            <a href="https://www.strava.com/settings/api" target="_blank">strava.com/settings/api</a>.
+            Set <strong>Authorization Callback Domain</strong> to
+            <code id="stravaCallbackDomain"></code>
+          </p>
+          <div class="row g-2 mb-2">
+            <div class="col-sm-5">
+              <input type="text" class="form-control form-control-sm" id="stravaClientId" placeholder="Client ID">
+            </div>
+            <div class="col-sm-5">
+              <input type="password" class="form-control form-control-sm" id="stravaClientSecret" placeholder="Client Secret">
+            </div>
+            <div class="col-sm-2">
+              <button class="btn btn-warning btn-sm w-100" id="btnConnectStrava" onclick="connectStrava()">
+                Connect
+              </button>
+            </div>
+          </div>
+          <div id="stravaConnectResult" class="small" style="display:none;"></div>
+        </div>
+
+        <!-- Sync button (shown when connected) -->
         <div class="d-flex gap-2">
           <button class="btn btn-success btn-sm" id="btnSyncStrava">
             <i class="bi bi-cloud-download"></i> Sync Now (Last 7 Days)
@@ -371,12 +395,6 @@
       </div>
       <div class="col-md-4">
         <div class="card">
-          <div class="card-header small fw-bold"><i class="bi bi-droplet me-1"></i>Water Intake</div>
-          <div class="card-body"><canvas id="chartWater"></canvas></div>
-        </div>
-      </div>
-      <div class="col-md-4">
-        <div class="card">
           <div class="card-header small fw-bold"><i class="bi bi-pie-chart me-1"></i>Workout Types</div>
           <div class="card-body"><canvas id="chartWorkoutTypes"></canvas></div>
         </div>
@@ -399,7 +417,7 @@
 
     <!-- Recommendations -->
     <div class="card mb-3" id="recsCard" style="display:none;">
-      <div class="card-header small fw-bold"><i class="bi bi-lightbulb me-1"></i>Age-Based Recommendations</div>
+      <div class="card-header small fw-bold"><i class="bi bi-lightbulb me-1"></i>Your Personalized Recommendations</div>
       <div class="card-body" id="recsBody"></div>
     </div>
   </div>

@@ -3,9 +3,30 @@
 import json
 import os
 import threading
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone, tzinfo
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for
+
+
+# Mountain Time: UTC-7 (MDT) / UTC-6 (MST)
+# Use a fixed offset; adjust if needed for daylight saving
+class _MountainTime(tzinfo):
+    def utcoffset(self, dt):
+        return timedelta(hours=-6)
+    def tzname(self, dt):
+        return "MDT"
+    def dst(self, dt):
+        return timedelta(0)
+
+MT = _MountainTime()
+
+
+def _today_mt() -> date:
+    return datetime.now(MT).date()
+
+
+def _now_mt() -> datetime:
+    return datetime.now(MT)
 
 from health_tracker.models import (
     UserProfile, HealthHabit, Workout, HeartRateEntry, DailyRecord,
@@ -14,9 +35,10 @@ from health_tracker.calculator import (
     calculate_calories_burned, calculate_bmr, calculate_steps_calories,
     analyze_heart_rate, get_age_based_recommendations,
 )
+from health_tracker.recommendations import generate_personalized_recommendations
 from health_tracker.storage import (
     save_profile, load_profile, save_daily_record, load_daily_record,
-    list_all_records, ensure_data_dir,
+    load_daily_records_batch, list_all_records, ensure_data_dir, DATA_DIR,
 )
 from health_tracker.summary import (
     generate_daily_summary, calculate_health_score, get_score_rating,
@@ -29,12 +51,29 @@ from health_tracker.integrations.sync import sync_imported_records
 from health_tracker.integrations.shortcut_generator import (
     generate_shortcut_instructions, generate_test_curl_command, get_local_ip,
 )
-from health_tracker.integrations.strava import load_strava_token, import_strava
+from health_tracker.integrations.strava import (
+    load_strava_token, import_strava, save_strava_token,
+    STRAVA_AUTH_URL, STRAVA_TOKEN_URL,
+)
+from health_tracker.integrations.apple_health_server import (
+    parse_ios_payload, IOS_WORKOUT_TYPE_MAP, _fuzzy_workout_type,
+)
 
 app = Flask(__name__)
+ensure_data_dir()
 
 # Keep a reference to the daemon when started from the web UI
 _daemon_instance: AutoSyncDaemon | None = None
+
+
+def _get_base_url() -> str:
+    """Return the externally-visible base URL of this app."""
+    # Render sets RENDER_EXTERNAL_URL automatically
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_url:
+        return render_url.rstrip("/")
+    # Fall back to request host when running locally
+    return request.host_url.rstrip("/")
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +83,7 @@ _daemon_instance: AutoSyncDaemon | None = None
 @app.route("/")
 def index():
     profile = load_profile()
-    return render_template("index.html", profile=profile, today=date.today().isoformat())
+    return render_template("index.html", profile=profile, today=_today_mt().isoformat())
 
 
 # ---------------------------------------------------------------------------
@@ -187,14 +226,19 @@ def api_daemon_log():
 def api_shortcut_instructions():
     config = load_config()
     port = config["apple_health_server"]["port"]
-    instructions = generate_shortcut_instructions(port)
-    curl_cmd = generate_test_curl_command(port)
-    local_ip = get_local_ip()
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    base_url = render_url or None
+    instructions = generate_shortcut_instructions(port, base_url=base_url)
+    curl_cmd = generate_test_curl_command(port, base_url=base_url)
+    if render_url:
+        server_url = f"{render_url.rstrip('/')}/sync"
+    else:
+        local_ip = get_local_ip()
+        server_url = f"http://{local_ip}:{port}/sync"
     return jsonify({
         "instructions": instructions,
         "curl_command": curl_cmd,
-        "server_url": f"http://{local_ip}:{port}/sync",
-        "local_ip": local_ip,
+        "server_url": server_url,
     })
 
 
@@ -208,6 +252,103 @@ def api_strava_status():
     return jsonify({"connected": token is not None})
 
 
+@app.route("/api/strava/connect", methods=["POST"])
+def api_strava_connect():
+    """Start Strava OAuth flow — returns auth URL for the browser to redirect to."""
+    data = request.json or {}
+    client_id = data.get("client_id", "").strip()
+    client_secret = data.get("client_secret", "").strip()
+    if not client_id or not client_secret:
+        return jsonify({"error": "client_id and client_secret are required"}), 400
+
+    # Persist credentials so the callback can use them
+    _save_pending_strava_creds(client_id, client_secret)
+
+    from urllib.parse import urlencode
+    callback_url = f"{_get_base_url()}/strava/callback"
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": callback_url,
+        "scope": "read,activity:read_all",
+        "approval_prompt": "auto",
+    }
+    return jsonify({"auth_url": f"{STRAVA_AUTH_URL}?{urlencode(params)}", "callback_url": callback_url})
+
+
+@app.route("/strava/callback")
+def strava_callback():
+    """Handle OAuth redirect from Strava after user approves access."""
+    import requests as req
+    code = request.args.get("code")
+    error = request.args.get("error")
+    if error or not code:
+        return render_template("index.html", profile=load_profile(),
+                               today=_today_mt().isoformat(),
+                               strava_error=error or "No code received"), 400
+
+    creds = _load_pending_strava_creds()
+    if not creds:
+        return "Session expired — please try connecting Strava again from the Setup tab.", 400
+
+    resp = req.post(STRAVA_TOKEN_URL, data={
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+        "code": code,
+        "grant_type": "authorization_code",
+    }, timeout=30)
+
+    if resp.status_code != 200:
+        return f"Token exchange failed: {resp.text}", 400
+
+    token_data = resp.json()
+    save_strava_token({
+        "access_token": token_data["access_token"],
+        "refresh_token": token_data["refresh_token"],
+        "expires_at": token_data["expires_at"],
+        "client_id": creds["client_id"],
+        "client_secret": creds["client_secret"],
+    })
+    _clear_pending_strava_creds()
+    return redirect("/?strava=connected")
+
+
+# ---------------------------------------------------------------------------
+# Strava OAuth helpers
+# ---------------------------------------------------------------------------
+
+def _save_pending_strava_creds(client_id: str, client_secret: str):
+    from health_tracker.db_storage import is_db_enabled, db_put
+    data = {"client_id": client_id, "client_secret": client_secret}
+    if is_db_enabled():
+        db_put("_pending_strava", data)
+    else:
+        p = os.path.join(DATA_DIR, "_pending_strava.json")
+        with open(p, "w") as f:
+            json.dump(data, f)
+
+
+def _load_pending_strava_creds() -> dict | None:
+    from health_tracker.db_storage import is_db_enabled, db_get
+    if is_db_enabled():
+        return db_get("_pending_strava")
+    p = os.path.join(DATA_DIR, "_pending_strava.json")
+    if not os.path.exists(p):
+        return None
+    with open(p) as f:
+        return json.load(f)
+
+
+def _clear_pending_strava_creds():
+    from health_tracker.db_storage import is_db_enabled, db_delete
+    if is_db_enabled():
+        db_delete("_pending_strava")
+    else:
+        p = os.path.join(DATA_DIR, "_pending_strava.json")
+        if os.path.exists(p):
+            os.unlink(p)
+
+
 @app.route("/api/strava/sync", methods=["POST"])
 def api_strava_sync():
     token_data = load_strava_token()
@@ -215,7 +356,7 @@ def api_strava_sync():
         return jsonify({"error": "Strava not connected"}), 400
 
     days = request.json.get("days", 7) if request.json else 7
-    start = (date.today() - timedelta(days=days)).isoformat()
+    start = (_today_mt() - timedelta(days=days)).isoformat()
 
     imported = import_strava(
         token_data["access_token"],
@@ -225,10 +366,101 @@ def api_strava_sync():
     if imported:
         updated, created = sync_imported_records(imported)
         config = load_config()
-        config["last_strava_sync"] = date.today().isoformat()
+        config["last_strava_sync"] = _today_mt().isoformat()
         save_config(config)
         return jsonify({"status": "ok", "days_updated": updated, "days_created": created})
     return jsonify({"status": "ok", "days_updated": 0, "days_created": 0})
+
+
+# ---------------------------------------------------------------------------
+# Apple Health Sync (iOS Shortcut endpoint — works on Render)
+# ---------------------------------------------------------------------------
+
+@app.route("/sync", methods=["POST", "GET"])
+@app.route("/api/health/sync", methods=["POST", "GET"])
+def api_health_sync():
+    """Receive health data from iOS Shortcuts.
+
+    This replaces the separate port-8090 server so the same URL works
+    both locally and on Render.  GET /sync acts as a ping.
+    """
+    if request.method == "GET":
+        return jsonify({"status": "ok", "service": "health-tracker", "endpoint": "POST /sync"})
+
+    from datetime import datetime as dt
+    try:
+        # Try multiple ways to get the body — iOS Shortcuts sends data differently
+        # depending on the "Request Body" setting (JSON vs File vs Form).
+        data = request.get_json(force=True, silent=True)
+
+        if not data:
+            # Try raw body
+            raw = request.get_data(as_text=True)
+
+            # Try file upload (Shortcuts "File" body type)
+            if not raw and request.files:
+                for f in request.files.values():
+                    raw = f.read().decode("utf-8", errors="replace")
+                    break
+
+            # Try form data
+            if not raw and request.form:
+                raw = next(iter(request.form.keys()), "") + next(iter(request.form.values()), "")
+
+            if not raw:
+                return jsonify({
+                    "error": "Empty request body",
+                    "debug": {
+                        "content_type": request.content_type,
+                        "content_length": request.content_length,
+                        "has_files": bool(request.files),
+                        "has_form": bool(request.form),
+                    }
+                }), 400
+
+            cleaned = _clean_shortcut_json(raw)
+            try:
+                data = json.loads(cleaned)
+            except json.JSONDecodeError:
+                return jsonify({
+                    "error": "Could not parse JSON",
+                    "hint": "Set heart_rate_readings and workouts to [] in the Shortcut",
+                    "received_preview": raw[:500],
+                }), 400
+
+        record_date = data.get("date") or _now_mt().strftime("%Y-%m-%d")
+        # Normalize date — iOS Shortcuts may send full ISO datetime
+        if "T" in record_date:
+            record_date = record_date.split("T")[0]
+        if len(record_date) > 10:
+            record_date = record_date[:10]
+        imported = parse_ios_payload(data, record_date)
+
+        existing = load_daily_record(record_date)
+        if existing:
+            from health_tracker.integrations.sync import merge_daily_records
+            merged = merge_daily_records(existing, imported)
+            save_daily_record(merged)
+        else:
+            save_daily_record(imported)
+
+        h = imported.health_habits
+        return jsonify({
+            "status": "success",
+            "date": record_date,
+            "steps": h.steps if h else 0,
+            "sleep_hours": h.sleep_hours if h else 0,
+            "sleep_start_received": data.get("sleep_start", ""),
+            "sleep_end_received": data.get("sleep_end", ""),
+            "active_energy": h.active_energy_burned if h else 0,
+            "resting_energy": h.resting_energy_burned if h else 0,
+            "distance_miles": round(h.distance_walked_km * 0.621371, 2) if h else 0,
+            "flights_climbed": h.flights_climbed if h else 0,
+            "workouts_imported": len(imported.workouts),
+            "heart_rate_readings": len(imported.heart_rate_readings),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +472,125 @@ def api_list_records():
     return jsonify({"dates": list_all_records()})
 
 
-@app.route("/api/records/<record_date>", methods=["GET"])
+@app.route("/api/records/flush", methods=["POST"])
+def api_flush_records():
+    """Delete all daily records. Strava/Apple Health can re-sync fresh data."""
+    from health_tracker.db_storage import is_db_enabled, db_delete, db_list_keys
+    dates = list_all_records()
+    if is_db_enabled():
+        for key in db_list_keys("record_"):
+            db_delete(key)
+    else:
+        for d in dates:
+            path = os.path.join(DATA_DIR, f"record_{d}.json")
+            if os.path.exists(path):
+                os.unlink(path)
+    return jsonify({"status": "flushed", "records_deleted": len(dates)})
+
+
+@app.route("/api/records/fix-workout-types", methods=["POST"])
+def api_fix_workout_types():
+    """Re-map workout types in all existing records using the updated mapping."""
+    from health_tracker.integrations.strava import STRAVA_SPORT_MAP
+    # Allow override via query param, e.g. ?other_to=weightlifting
+    other_default = request.args.get("other_to", "weightlifting")
+    dates = list_all_records()
+    fixed_count = 0
+    details = []
+    for d in dates:
+        record = load_daily_record(d)
+        if not record:
+            continue
+        changed = False
+        for w in record.workouts:
+            old_type = w.workout_type
+            new_type = old_type
+
+            if old_type == "other":
+                # Try to recover from external_id or notes
+                hint = (w.external_id or "") + " " + (w.notes or "")
+                hint_lower = hint.lower()
+                recovered = _fuzzy_workout_type(hint_lower)
+                if recovered != hint_lower and recovered != "other":
+                    new_type = recovered
+                else:
+                    new_type = other_default
+            else:
+                normalized = old_type.lower().replace(" ", "_")
+                mapped = IOS_WORKOUT_TYPE_MAP.get(normalized)
+                if not mapped:
+                    mapped = _fuzzy_workout_type(normalized)
+                new_type = mapped
+
+            if new_type != old_type:
+                details.append({"date": d, "from": old_type, "to": new_type})
+                w.workout_type = new_type
+                changed = True
+                fixed_count += 1
+        if changed:
+            save_daily_record(record)
+    return jsonify({"status": "done", "workouts_fixed": fixed_count, "details": details})
+
+
+@app.route("/api/debug/sleep", methods=["GET"])
+def api_debug_sleep():
+    """Show sleep data for recent records to debug missing sleep hours."""
+    dates = request.args.get("dates", "").split(",") if request.args.get("dates") else list_all_records()[-14:]
+    result = []
+    for d in dates:
+        d = d.strip()
+        if not d:
+            continue
+        record = load_daily_record(d)
+        if not record:
+            result.append({"date": d, "has_record": False})
+            continue
+        h = record.health_habits
+        result.append({
+            "date": d,
+            "has_record": True,
+            "sleep_hours": h.sleep_hours if h else 0,
+            "steps": h.steps if h else 0,
+            "active_energy": h.active_energy_burned if h else 0,
+            "has_workouts": len(record.workouts),
+        })
+    return jsonify({"records": result})
+
+
+@app.route("/api/data/export", methods=["GET"])
+def api_data_export():
+    """Export all data from the database for migration."""
+    from health_tracker.db_storage import is_db_enabled, db_export_all
+    if not is_db_enabled():
+        return jsonify({"error": "Database not configured"}), 400
+    data = db_export_all()
+    return jsonify({"record_count": len(data), "data": data})
+
+
+@app.route("/api/data/import", methods=["POST"])
+def api_data_import():
+    """Import data into the database (for migration to new provider)."""
+    from health_tracker.db_storage import is_db_enabled, db_import_all
+    if not is_db_enabled():
+        return jsonify({"error": "Database not configured"}), 400
+    payload = request.get_json()
+    if not payload or "data" not in payload:
+        return jsonify({"error": "JSON body must contain 'data' dict"}), 400
+    db_import_all(payload["data"])
+    return jsonify({"status": "imported", "record_count": len(payload["data"])})
+
+
+@app.route("/api/records/<record_date>", methods=["GET", "DELETE"])
 def api_get_record(record_date):
+    if request.method == "DELETE":
+        from health_tracker.db_storage import is_db_enabled, db_delete
+        if is_db_enabled():
+            db_delete(f"record_{record_date}")
+        else:
+            path = os.path.join(DATA_DIR, f"record_{record_date}.json")
+            if os.path.exists(path):
+                os.unlink(path)
+        return jsonify({"status": "deleted", "date": record_date})
     record = load_daily_record(record_date)
     if not record:
         return jsonify({"error": "not found"}), 404
@@ -282,13 +631,15 @@ def api_analytics_range():
         return jsonify({"error": "No profile"}), 400
 
     days = request.args.get("days", 7, type=int)
-    end = date.today()
+    end = _today_mt()
     start = end - timedelta(days=days - 1)
 
+    date_list = [(start + timedelta(days=i)).isoformat() for i in range(days)]
+    records_map = load_daily_records_batch(date_list)
+
     results = []
-    for i in range(days):
-        d = (start + timedelta(days=i)).isoformat()
-        record = load_daily_record(d)
+    for d in date_list:
+        record = records_map.get(d)
         if not record:
             results.append({"date": d, "has_data": False})
             continue
@@ -311,12 +662,10 @@ def api_analytics_range():
         step_cal = 0.0
         steps = 0
         sleep = 0.0
-        water = 0.0
         active_energy = 0.0
         if record.health_habits:
             steps = record.health_habits.steps
             sleep = record.health_habits.sleep_hours
-            water = record.health_habits.water_intake_liters
             active_energy = record.health_habits.active_energy_burned
             step_cal = calculate_steps_calories(profile, steps)
 
@@ -339,7 +688,6 @@ def api_analytics_range():
             "score": score,
             "steps": steps,
             "sleep_hours": sleep,
-            "water_liters": water,
             "workout_minutes": total_workout_min,
             "workout_calories": round(workout_calories, 1),
             "workout_types": workout_types,
@@ -367,7 +715,8 @@ def api_analytics_range():
         "total_calories_burned": round(sum(r["total_calories"] for r in data_days), 1),
     }
 
-    recs = get_age_based_recommendations(profile)
+    all_records = [records_map[d] for d in date_list if records_map.get(d)]
+    personalized = generate_personalized_recommendations(profile, all_records)
 
     return jsonify({
         "profile": {
@@ -376,7 +725,7 @@ def api_analytics_range():
             "bmi": profile.bmi,
             "max_heart_rate": profile.max_heart_rate,
         },
-        "recommendations": recs,
+        "recommendations": personalized,
         "days": results,
         "totals": totals,
     })
@@ -430,7 +779,7 @@ def api_workout_detail(record_date):
             "type": w.workout_type,
             "duration_minutes": w.duration_minutes,
             "intensity": w.intensity,
-            "distance_km": w.distance_km,
+            "distance_miles": round(w.distance_km * 0.621371, 2) if w.distance_km else None,
             "calories": round(cal, 1),
             "calories_source": "device" if w.calories_reported else "estimated",
             "avg_heart_rate": w.avg_heart_rate,
@@ -449,7 +798,6 @@ def _record_to_dict(record: DailyRecord) -> dict:
     if record.health_habits:
         h = record.health_habits
         d["health_habits"] = {
-            "water_liters": h.water_intake_liters,
             "sleep_hours": h.sleep_hours,
             "steps": h.steps,
             "fruits_vegs": h.fruits_vegetables_servings,
@@ -457,12 +805,12 @@ def _record_to_dict(record: DailyRecord) -> dict:
             "active_energy": h.active_energy_burned,
             "resting_energy": h.resting_energy_burned,
             "flights_climbed": h.flights_climbed,
-            "distance_km": h.distance_walked_km,
+            "distance_miles": round(h.distance_walked_km * 0.621371, 2),
         }
     d["workouts"] = [{
         "type": w.workout_type, "duration": w.duration_minutes,
         "intensity": w.intensity, "source": w.source,
-        "calories": w.calories_reported, "distance_km": w.distance_km,
+        "calories": w.calories_reported, "distance_miles": round(w.distance_km * 0.621371, 2) if w.distance_km else None,
     } for w in record.workouts]
     d["heart_rate"] = [{
         "time": hr.time, "bpm": hr.heart_rate_bpm,
@@ -471,6 +819,30 @@ def _record_to_dict(record: DailyRecord) -> dict:
     return d
 
 
+def _clean_shortcut_json(raw: str) -> str:
+    """Best-effort cleanup of iOS Shortcut JSON output.
+
+    HealthKit variables for heart_rate_readings and workouts often expand
+    into non-JSON text.  This strips those fields back to empty arrays and
+    coerces non-numeric values to 0.
+    """
+    import re
+
+    # Replace any non-JSON value for array fields with []
+    raw = re.sub(
+        r'"(heart_rate_readings|workouts)"\s*:\s*(?!\[)(.+?)(?=,\s*"|\s*\})',
+        r'"\1": []',
+        raw,
+    )
+
+    # Replace any non-numeric value for numeric fields with 0
+    numeric_fields = "steps|sleep_hours|active_energy|resting_energy|distance_km|distance|distance_miles|flights_climbed"
+    pattern = r'"(' + numeric_fields + r')"\s*:\s*(?!"|\[|\{)([^,\}]*[^0-9.\-,\}][^,\}]*)'
+    raw = re.sub(pattern, r'"\1": 0', raw)
+
+    return raw
+
+
 if __name__ == "__main__":
-    ensure_data_dir()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)

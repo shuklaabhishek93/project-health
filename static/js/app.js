@@ -222,15 +222,65 @@ async function loadStravaStatus() {
   const d = await api('/api/strava/status');
   const badge = document.getElementById('stravaBadge');
   const info = document.getElementById('stravaInfo');
+  const connectForm = document.getElementById('stravaConnectForm');
   if (d.connected) {
     badge.textContent = 'Connected';
     badge.className = 'badge ms-auto badge-connected';
     info.textContent = 'Strava is connected via OAuth2. The scheduler will automatically fetch your activities daily.';
+    if (connectForm) connectForm.style.display = 'none';
   } else {
     badge.textContent = 'Not Connected';
     badge.className = 'badge ms-auto badge-disconnected';
-    info.innerHTML = 'Strava is not connected. Run <code>python main.py</code> and use option 5 to authorize via OAuth2, then refresh this page.';
+    info.innerHTML = 'Enter your Strava API credentials below to connect.';
+    if (connectForm) connectForm.style.display = 'block';
   }
+}
+
+async function connectStrava() {
+  const clientId = document.getElementById('stravaClientId')?.value?.trim();
+  const clientSecret = document.getElementById('stravaClientSecret')?.value?.trim();
+  const result = document.getElementById('stravaConnectResult');
+  if (!clientId || !clientSecret) {
+    result.textContent = 'Please enter both Client ID and Client Secret.';
+    result.className = 'small mt-2 text-danger';
+    result.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('btnConnectStrava');
+  btn.disabled = true;
+  btn.textContent = 'Redirecting to Strava...';
+  try {
+    const d = await api('/api/strava/connect', { method: 'POST', body: { client_id: clientId, client_secret: clientSecret } });
+    if (d.error) {
+      result.textContent = 'Error: ' + d.error;
+      result.className = 'small mt-2 text-danger';
+      result.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Connect Strava';
+    } else {
+      result.textContent = 'Opening Strava authorization page...';
+      result.className = 'small mt-2 text-info';
+      result.style.display = 'block';
+      window.location.href = d.auth_url;
+    }
+  } catch (e) {
+    result.textContent = 'Error: ' + e.message;
+    result.className = 'small mt-2 text-danger';
+    result.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Connect Strava';
+  }
+}
+
+// Populate the callback domain hint in the connect form
+const domainEl = document.getElementById('stravaCallbackDomain');
+if (domainEl) domainEl.textContent = window.location.hostname;
+
+// Show success message if redirected back from Strava
+if (new URLSearchParams(window.location.search).get('strava') === 'connected') {
+  loadStravaStatus();
+  showToast('Strava connected successfully!');
+  window.history.replaceState({}, '', '/');
 }
 
 document.getElementById('btnSyncStrava').addEventListener('click', async () => {
@@ -409,28 +459,6 @@ async function loadAnalytics() {
     },
   });
 
-  // --- Water Chart ---
-  destroyChart('water');
-  charts.water = new Chart(document.getElementById('chartWater'), {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Water',
-        data: d.days.map(r => r.has_data ? r.water_liters : 0),
-        backgroundColor: d.days.map(r => {
-          if (!r.has_data || r.water_liters === 0) return 'rgba(108,117,125,0.3)';
-          if (r.water_liters >= 2.5) return C.info;
-          if (r.water_liters >= 2.0) return C.warning;
-          return C.danger;
-        }),
-      }],
-    },
-    options: { ...chartOpts('Water', 'Liters'),
-      scales: { ...chartOpts('','Liters').scales, y: { ...chartOpts('','Liters').scales.y, min: 0 } },
-    },
-  });
-
   // --- Workout Types Pie ---
   const typeCounts = {};
   dataDays.forEach(r => {
@@ -460,37 +488,62 @@ async function loadAnalytics() {
     },
   });
 
-  // --- Recommendations ---
+  // --- Personalized Recommendations ---
   if (d.recommendations) {
     const rc = document.getElementById('recsCard');
     rc.style.display = 'block';
     const rb = document.getElementById('recsBody');
     const rec = d.recommendations;
-    rb.innerHTML = `
-      <div class="row g-3">
-        <div class="col-md-3">
-          <strong class="small">Weekly Exercise</strong>
-          <div>${rec.exercise_minutes_per_week} min/week</div>
-        </div>
-        <div class="col-md-3">
-          <strong class="small">Sleep Target</strong>
-          <div>${rec.sleep_hours} hours</div>
-        </div>
-        <div class="col-md-3">
-          <strong class="small">Water Target</strong>
-          <div>${rec.water_liters}L / day</div>
-        </div>
-        <div class="col-md-3">
-          <strong class="small">Recommended Workouts</strong>
-          <div class="small">${rec.recommended_workouts.join(', ')}</div>
-        </div>
-      </div>
-      <div class="mt-2">
-        <strong class="small">Focus Areas</strong>
-        <ul>${rec.focus_areas.map(a => `<li>${a}</li>`).join('')}</ul>
-      </div>
-      <div class="alert alert-warning small mt-2 mb-0 py-1">${rec.caution}</div>
-    `;
+    const t = rec.targets || {};
+    const s = rec.stats || {};
+
+    let html = '';
+
+    // Your Stats Summary
+    html += `<div class="row g-2 mb-3">
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Avg Steps</div><strong>${(s.avg_steps||0).toLocaleString()}</strong><div class="small text-muted">/ ${(t.steps||10000).toLocaleString()}</div></div></div>
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Avg Sleep</div><strong>${s.avg_sleep||0} hrs</strong><div class="small text-muted">/ ${t.sleep_hours||'7-9'} hrs</div></div></div>
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Weekly Exercise</div><strong>${s.weekly_workout_min||0} min</strong><div class="small text-muted">/ ${t.exercise_min_per_week||150} min</div></div></div>
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">BMI</div><strong>${s.bmi||'--'}</strong><div class="small text-muted">${s.bmi_category||''}</div></div></div>
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Active Cal/day</div><strong>${s.avg_active_energy||0}</strong></div></div>
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Avg Distance</div><strong>${s.avg_distance_miles||0} mi</strong></div></div>
+    </div>`;
+
+    // Achievements
+    if (rec.achievements && rec.achievements.length) {
+      html += `<div class="mb-2">`;
+      rec.achievements.forEach(a => {
+        html += `<div class="alert alert-success small py-1 px-2 mb-1"><i class="bi bi-check-circle me-1"></i>${a}</div>`;
+      });
+      html += `</div>`;
+    }
+
+    // Warnings
+    if (rec.warnings && rec.warnings.length) {
+      rec.warnings.forEach(w => {
+        html += `<div class="alert alert-danger small py-1 px-2 mb-1"><i class="bi bi-exclamation-triangle me-1"></i>${w}</div>`;
+      });
+    }
+
+    // Insights
+    if (rec.insights && rec.insights.length) {
+      rec.insights.forEach(i => {
+        html += `<div class="alert alert-info small py-1 px-2 mb-1"><i class="bi bi-lightbulb me-1"></i>${i}</div>`;
+      });
+    }
+
+    // Recommended Workouts
+    if (rec.recommended_workouts && rec.recommended_workouts.length) {
+      html += `<div class="mt-2"><strong class="small">Recommended Workouts for You</strong>
+        <div class="mt-1">${rec.recommended_workouts.map(w => `<span class="badge bg-primary me-1">${w.replace('_',' ')}</span>`).join('')}</div></div>`;
+    }
+
+    // Days analyzed note
+    if (s.total_days_analyzed) {
+      html += `<div class="text-muted small mt-2">Based on ${s.total_days_analyzed} day${s.total_days_analyzed > 1 ? 's' : ''} of data</div>`;
+    }
+
+    rb.innerHTML = html;
   }
 }
 

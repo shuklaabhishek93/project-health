@@ -1,4 +1,8 @@
-"""JSON-based data persistence for health tracking."""
+"""Data persistence for health tracking.
+
+Uses PostgreSQL when DATABASE_URL is set (Render / cloud), otherwise
+falls back to local JSON files.
+"""
 
 import json
 import os
@@ -12,6 +16,7 @@ from .models import (
     HeartRateEntry,
     DailyRecord,
 )
+from .db_storage import is_db_enabled, db_put, db_get, db_get_many, db_list_keys
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
@@ -21,42 +26,52 @@ def ensure_data_dir():
     os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def save_profile(profile: UserProfile):
-    """Save user profile to JSON file."""
-    ensure_data_dir()
-    filepath = os.path.join(DATA_DIR, "profile.json")
-    data = {
+# ---------------------------------------------------------------------------
+# Profile
+# ---------------------------------------------------------------------------
+
+def _profile_to_dict(profile: UserProfile) -> dict:
+    return {
         "name": profile.name,
         "age": profile.age,
         "weight_kg": profile.weight_kg,
         "height_cm": profile.height_cm,
         "gender": profile.gender,
     }
-    with open(filepath, "w") as f:
-        json.dump(data, f, indent=2)
+
+
+def _dict_to_profile(data: dict) -> UserProfile:
+    return UserProfile(**data)
+
+
+def save_profile(profile: UserProfile):
+    data = _profile_to_dict(profile)
+    if is_db_enabled():
+        db_put("profile", data)
+    else:
+        ensure_data_dir()
+        with open(os.path.join(DATA_DIR, "profile.json"), "w") as f:
+            json.dump(data, f, indent=2)
 
 
 def load_profile() -> Optional[UserProfile]:
-    """Load user profile from JSON file."""
+    if is_db_enabled():
+        data = db_get("profile")
+        return _dict_to_profile(data) if data else None
     filepath = os.path.join(DATA_DIR, "profile.json")
     if not os.path.exists(filepath):
         return None
     with open(filepath, "r") as f:
         data = json.load(f)
-    return UserProfile(**data)
+    return _dict_to_profile(data)
 
 
-def get_daily_record_path(record_date: str) -> str:
-    """Get file path for a daily record."""
-    return os.path.join(DATA_DIR, f"record_{record_date}.json")
+# ---------------------------------------------------------------------------
+# Daily records
+# ---------------------------------------------------------------------------
 
-
-def save_daily_record(record: DailyRecord):
-    """Save a daily record to JSON file."""
-    ensure_data_dir()
-    filepath = get_daily_record_path(record.date)
-
-    data = {
+def _record_to_json(record: DailyRecord) -> dict:
+    data: dict = {
         "date": record.date,
         "health_habits": None,
         "workouts": [],
@@ -67,7 +82,6 @@ def save_daily_record(record: DailyRecord):
     if record.health_habits:
         data["health_habits"] = {
             "date": record.health_habits.date,
-            "water_intake_liters": record.health_habits.water_intake_liters,
             "sleep_hours": record.health_habits.sleep_hours,
             "steps": record.health_habits.steps,
             "fruits_vegetables_servings": record.health_habits.fruits_vegetables_servings,
@@ -108,19 +122,10 @@ def save_daily_record(record: DailyRecord):
             "external_id": hr.external_id,
         })
 
-    with open(filepath, "w") as f:
-        json.dump(data, f, indent=2)
+    return data
 
 
-def load_daily_record(record_date: str) -> Optional[DailyRecord]:
-    """Load a daily record from JSON file."""
-    filepath = get_daily_record_path(record_date)
-    if not os.path.exists(filepath):
-        return None
-
-    with open(filepath, "r") as f:
-        data = json.load(f)
-
+def _json_to_record(data: dict) -> DailyRecord:
     record = DailyRecord(date=data["date"])
     record.total_calories_burned = data.get("total_calories_burned", 0.0)
 
@@ -128,7 +133,6 @@ def load_daily_record(record_date: str) -> Optional[DailyRecord]:
         h = data["health_habits"]
         record.health_habits = HealthHabit(
             date=h["date"],
-            water_intake_liters=h.get("water_intake_liters", 0.0),
             sleep_hours=h.get("sleep_hours", 0.0),
             steps=h.get("steps", 0),
             fruits_vegetables_servings=h.get("fruits_vegetables_servings", 0),
@@ -172,12 +176,52 @@ def load_daily_record(record_date: str) -> Optional[DailyRecord]:
     return record
 
 
+def get_daily_record_path(record_date: str) -> str:
+    return os.path.join(DATA_DIR, f"record_{record_date}.json")
+
+
+def save_daily_record(record: DailyRecord):
+    data = _record_to_json(record)
+    if is_db_enabled():
+        db_put(f"record_{record.date}", data)
+    else:
+        ensure_data_dir()
+        with open(get_daily_record_path(record.date), "w") as f:
+            json.dump(data, f, indent=2)
+
+
+def load_daily_record(record_date: str) -> Optional[DailyRecord]:
+    if is_db_enabled():
+        data = db_get(f"record_{record_date}")
+        return _json_to_record(data) if data else None
+    filepath = get_daily_record_path(record_date)
+    if not os.path.exists(filepath):
+        return None
+    with open(filepath, "r") as f:
+        data = json.load(f)
+    return _json_to_record(data)
+
+
+def load_daily_records_batch(dates: list[str]) -> dict[str, Optional[DailyRecord]]:
+    """Load multiple daily records in one database round-trip."""
+    if is_db_enabled():
+        keys = [f"record_{d}" for d in dates]
+        raw = db_get_many(keys)
+        return {
+            d: _json_to_record(raw[f"record_{d}"]) if f"record_{d}" in raw else None
+            for d in dates
+        }
+    return {d: load_daily_record(d) for d in dates}
+
+
 def list_all_records() -> list[str]:
-    """List all record dates available."""
+    if is_db_enabled():
+        keys = db_list_keys("record_")
+        return sorted(k.replace("record_", "", 1) for k in keys)
     ensure_data_dir()
     records = []
     for filename in os.listdir(DATA_DIR):
         if filename.startswith("record_") and filename.endswith(".json"):
-            date_str = filename[7:-5]  # Remove "record_" prefix and ".json" suffix
+            date_str = filename[7:-5]
             records.append(date_str)
     return sorted(records)

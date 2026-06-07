@@ -47,6 +47,8 @@ STRAVA_SPORT_MAP = {
     "Hike": "walking",
     "Yoga": "yoga",
     "Weight Training": "weightlifting",
+    "WeightTraining": "weightlifting",
+    "Strength Training": "weightlifting",
     "Workout": "hiit",
     "HIIT": "hiit",
     "CrossFit": "hiit",
@@ -178,21 +180,36 @@ def authorize_strava(client_id: str, client_secret: str) -> Optional[dict]:
     return save_data
 
 
+def save_strava_token(token_data: dict):
+    """Persist a Strava token dict."""
+    from ..db_storage import is_db_enabled, db_put
+    if is_db_enabled():
+        db_put("strava_token", token_data)
+    else:
+        with open(get_token_path(), "w") as f:
+            json.dump(token_data, f, indent=2)
+
+
 def load_strava_token() -> Optional[dict]:
     """Load saved Strava token, refreshing if expired."""
     if not check_requests_available():
         return None
 
-    token_path = get_token_path()
-    if not os.path.exists(token_path):
-        return None
+    from ..db_storage import is_db_enabled, db_get
+    if is_db_enabled():
+        token_data = db_get("strava_token")
+    else:
+        token_path = get_token_path()
+        if not os.path.exists(token_path):
+            return None
+        with open(token_path, "r") as f:
+            token_data = json.load(f)
 
-    with open(token_path, "r") as f:
-        token_data = json.load(f)
+    if not token_data:
+        return None
 
     # Check if token is expired
     if token_data.get("expires_at", 0) < time.time():
-        print("  Strava token expired, refreshing...")
         response = requests.post(STRAVA_TOKEN_URL, data={
             "client_id": token_data["client_id"],
             "client_secret": token_data["client_secret"],
@@ -201,7 +218,6 @@ def load_strava_token() -> Optional[dict]:
         }, timeout=30)
 
         if response.status_code != 200:
-            print(f"  ERROR: Token refresh failed. Please re-authorize.")
             return None
 
         new_data = response.json()
@@ -209,10 +225,7 @@ def load_strava_token() -> Optional[dict]:
         token_data["refresh_token"] = new_data["refresh_token"]
         token_data["expires_at"] = new_data["expires_at"]
 
-        with open(token_path, "w") as f:
-            json.dump(token_data, f, indent=2)
-
-        print("  Token refreshed successfully.")
+        save_strava_token(token_data)
 
     return token_data
 
@@ -362,7 +375,27 @@ def import_strava(
 
         # Map activity type
         sport_type = activity.get("sport_type", activity.get("type", "Workout"))
-        mapped_type = STRAVA_SPORT_MAP.get(sport_type, "other")
+        mapped_type = STRAVA_SPORT_MAP.get(sport_type)
+        if not mapped_type:
+            # Case-insensitive fallback
+            sport_lower = sport_type.lower()
+            for k, v in STRAVA_SPORT_MAP.items():
+                if k.lower() == sport_lower:
+                    mapped_type = v
+                    break
+            if not mapped_type:
+                if "strength" in sport_lower or "weight" in sport_lower:
+                    mapped_type = "weightlifting"
+                elif "run" in sport_lower:
+                    mapped_type = "running"
+                elif "ride" in sport_lower or "cycl" in sport_lower:
+                    mapped_type = "cycling"
+                elif "swim" in sport_lower:
+                    mapped_type = "swimming"
+                elif "walk" in sport_lower or "hike" in sport_lower:
+                    mapped_type = "walking"
+                else:
+                    mapped_type = "other"
 
         # Duration in minutes
         duration_seconds = activity.get("moving_time", activity.get("elapsed_time", 0))
@@ -457,7 +490,7 @@ def import_strava(
 
         print(f"    [{i + 1}/{len(activities)}] {activity.get('name', 'Activity')} - "
               f"{mapped_type}, {duration_minutes}min"
-              f"{f', {distance_km}km' if distance_km else ''}"
+              f"{f', {round(distance_km * 0.621371, 2)}mi' if distance_km else ''}"
               f"{f', {avg_hr}bpm avg' if avg_hr else ''}")
 
     print(f"\n  Strava import complete!")
