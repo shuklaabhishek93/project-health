@@ -1,9 +1,3 @@
-databases:
-  - name: project-health-db
-    plan: free
-    databaseName: health_tracker
-    user: health_user
-
 services:
   - type: web
     name: project-health
@@ -18,7 +12,5 @@ services:
       - key: RENDER
         value: "true"
       - key: DATABASE_URL
-        fromDatabase:
-          name: project-health-db
-          property: connectionString
+        sync: false
     autoDeploy: true
