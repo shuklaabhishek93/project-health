@@ -505,9 +505,18 @@ async function loadAnalytics() {
       <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Avg Sleep</div><strong>${s.avg_sleep||0} hrs</strong><div class="small text-muted">/ ${t.sleep_hours||'7-9'} hrs</div></div></div>
       <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Weekly Exercise</div><strong>${s.weekly_workout_min||0} min</strong><div class="small text-muted">/ ${t.exercise_min_per_week||150} min</div></div></div>
       <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">BMI</div><strong>${s.bmi||'--'}</strong><div class="small text-muted">${s.bmi_category||''}</div></div></div>
-      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Active Cal/day</div><strong>${s.avg_active_energy||0}</strong></div></div>
-      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Avg Distance</div><strong>${s.avg_distance_miles||0} mi</strong></div></div>
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Workout Freq</div><strong>${s.workout_frequency||0}/wk</strong><div class="small text-muted">${s.workout_days||0} of ${s.total_days_analyzed||0} days</div></div></div>
+      <div class="col-6 col-md-2"><div class="bg-body-secondary rounded p-2 text-center"><div class="small text-muted">Active Cal/day</div><strong>${s.avg_active_energy||0}</strong><div class="small text-muted">${s.avg_distance_miles||0} mi/day</div></div></div>
     </div>`;
+
+    // Today's Action Plan
+    if (rec.today_plan && rec.today_plan.length) {
+      html += `<div class="card border-primary mb-3"><div class="card-header bg-primary text-white py-1 px-2"><strong>Today's Plan</strong></div><div class="card-body py-2 px-2">`;
+      rec.today_plan.forEach(p => {
+        html += `<div class="small mb-1"><i class="bi bi-arrow-right-circle me-1"></i>${p}</div>`;
+      });
+      html += `</div></div>`;
+    }
 
     // Achievements
     if (rec.achievements && rec.achievements.length) {
@@ -540,7 +549,14 @@ async function loadAnalytics() {
 
     // Days analyzed note
     if (s.total_days_analyzed) {
-      html += `<div class="text-muted small mt-2">Based on ${s.total_days_analyzed} day${s.total_days_analyzed > 1 ? 's' : ''} of data</div>`;
+      let note = `Based on ${s.total_days_analyzed} day${s.total_days_analyzed > 1 ? 's' : ''} of data`;
+      if (s.sleep_consistency !== null && s.sleep_consistency !== undefined) {
+        note += ` | Sleep consistency: ±${s.sleep_consistency} hrs`;
+      }
+      if (s.total_flights > 0) {
+        note += ` | ${s.total_flights} flights climbed`;
+      }
+      html += `<div class="text-muted small mt-2">${note}</div>`;
     }
 
     rb.innerHTML = html;
