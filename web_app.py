@@ -105,6 +105,22 @@ def api_db_status():
     return jsonify(db_status())
 
 
+@app.route("/api/scheduler/status")
+def api_scheduler_status():
+    sync_hour = int(os.environ.get("SYNC_HOUR", "21"))
+    sync_minute = int(os.environ.get("SYNC_MINUTE", "45"))
+    token_data = load_strava_token()
+    config = load_config()
+    return jsonify({
+        "scheduler_running": _sync_scheduler_started,
+        "sync_time_mt": f"{sync_hour:02d}:{sync_minute:02d}",
+        "strava_connected": bool(token_data),
+        "last_strava_sync": config.get("last_strava_sync"),
+        "apple_health_endpoint": "/sync (always available)",
+        "current_time_mt": _now_mt().strftime("%Y-%m-%d %H:%M:%S MT"),
+    })
+
+
 # ---------------------------------------------------------------------------
 # Profile API
 # ---------------------------------------------------------------------------
@@ -865,3 +881,90 @@ def _clean_shortcut_json(raw: str) -> str:
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
+
+# ---------------------------------------------------------------------------
+# Automatic Nightly Sync Scheduler
+# ---------------------------------------------------------------------------
+# Runs Strava import automatically at a configured time (Mountain Time).
+# The /sync endpoint for Apple Health is always available — no start/stop needed.
+# This scheduler starts automatically with gunicorn on Render.
+
+_sync_scheduler_started = False
+
+
+def _run_scheduled_strava_sync():
+    """Execute Strava sync in background."""
+    import logging
+    logger = logging.getLogger("auto_scheduler")
+    try:
+        token_data = load_strava_token()
+        if not token_data:
+            logger.info("Scheduled Strava sync skipped — not connected")
+            return
+
+        start = (_today_mt() - timedelta(days=2)).isoformat()
+        imported = import_strava(
+            token_data["access_token"],
+            start_date=start,
+            fetch_heart_rates=True,
+        )
+        if imported:
+            updated, created = sync_imported_records(imported)
+            config = load_config()
+            config["last_strava_sync"] = _today_mt().isoformat()
+            save_config(config)
+            logger.info(f"Scheduled Strava sync complete: {updated} updated, {created} created")
+        else:
+            logger.info("Scheduled Strava sync: no new activities")
+    except Exception as e:
+        logger.error(f"Scheduled Strava sync failed: {e}", exc_info=True)
+
+
+def _nightly_sync_scheduler():
+    """Background thread: triggers Strava sync daily at configured time (Mountain Time)."""
+    import logging
+    import time as _time
+    logger = logging.getLogger("auto_scheduler")
+
+    sync_hour = int(os.environ.get("SYNC_HOUR", "21"))
+    sync_minute = int(os.environ.get("SYNC_MINUTE", "45"))
+
+    logger.info(f"Nightly sync scheduler started — Strava sync daily at {sync_hour:02d}:{sync_minute:02d} MT")
+
+    last_sync_date = None
+
+    while True:
+        try:
+            now = _now_mt()
+            today = now.date().isoformat()
+
+            if (now.hour == sync_hour and now.minute >= sync_minute
+                    and last_sync_date != today):
+                logger.info(f"Triggering scheduled Strava sync at {now.strftime('%H:%M')} MT")
+                _run_scheduled_strava_sync()
+                last_sync_date = today
+
+            _time.sleep(30)
+        except Exception as e:
+            logger.error(f"Scheduler error: {e}", exc_info=True)
+            _time.sleep(60)
+
+
+def start_nightly_scheduler():
+    """Start the nightly sync scheduler (idempotent — only starts once)."""
+    global _sync_scheduler_started
+    if _sync_scheduler_started:
+        return
+    _sync_scheduler_started = True
+
+    import logging
+    logging.basicConfig(level=logging.INFO)
+
+    t = threading.Thread(target=_nightly_sync_scheduler, daemon=True)
+    t.start()
+
+
+# Auto-start on Render (gunicorn imports this module)
+if os.environ.get("RENDER"):
+    start_nightly_scheduler()
