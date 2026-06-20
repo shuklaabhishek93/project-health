@@ -99,6 +99,11 @@ def index():
     return render_template("index.html", profile=profile, today=_today_mt().isoformat())
 
 
+@app.route("/ping")
+def api_ping():
+    return jsonify({"status": "ok", "time_mt": _now_mt().strftime("%Y-%m-%d %H:%M:%S")})
+
+
 @app.route("/api/db-status")
 def api_db_status():
     from health_tracker.db_storage import db_status
@@ -408,6 +413,59 @@ def api_strava_sync():
 
 
 # ---------------------------------------------------------------------------
+# Auto Strava Sync (triggered by Apple Health sync)
+# ---------------------------------------------------------------------------
+
+_strava_sync_lock = threading.Lock()
+
+
+def _trigger_strava_sync_background():
+    """Trigger Strava import in a background thread after Apple Health data arrives."""
+    import logging
+    logger = logging.getLogger("auto_strava")
+
+    def _do_sync():
+        if not _strava_sync_lock.acquire(blocking=False):
+            logger.info("Strava sync already in progress, skipping")
+            return
+        try:
+            token_data = load_strava_token()
+            if not token_data:
+                logger.info("Strava not connected — skipping auto-sync")
+                return
+
+            config = load_config()
+            last_sync = config.get("last_strava_sync", "")
+            today = _today_mt().isoformat()
+            if last_sync == today:
+                logger.info("Strava already synced today — skipping")
+                return
+
+            logger.info("Auto-triggering Strava sync after Apple Health data received")
+            start = (_today_mt() - timedelta(days=2)).isoformat()
+            imported = import_strava(
+                token_data["access_token"],
+                start_date=start,
+                fetch_heart_rates=True,
+            )
+            if imported:
+                updated, created = sync_imported_records(imported)
+                config["last_strava_sync"] = today
+                save_config(config)
+                logger.info(f"Auto Strava sync done: {updated} updated, {created} created")
+            else:
+                config["last_strava_sync"] = today
+                save_config(config)
+                logger.info("Auto Strava sync: no new activities")
+        except Exception as e:
+            logger.error(f"Auto Strava sync failed: {e}", exc_info=True)
+        finally:
+            _strava_sync_lock.release()
+
+    threading.Thread(target=_do_sync, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
 # Apple Health Sync (iOS Shortcut endpoint — works on Render)
 # ---------------------------------------------------------------------------
 
@@ -480,6 +538,10 @@ def api_health_sync():
             save_daily_record(imported)
 
         h = imported.health_habits
+
+        # Auto-trigger Strava sync in background after Apple Health data arrives
+        _trigger_strava_sync_background()
+
         return jsonify({
             "status": "success",
             "date": record_date,
